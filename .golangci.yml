@@ -61,6 +61,13 @@ linters:
             # we sign and hand to external developers.
             - $gostd
             - github.com/spf13/cobra
+            # OS credential store for `aigw login`. Chosen over 99designs/keyring
+            # because it needs no cgo on macOS, and our builds are CGO_ENABLED=0.
+            - github.com/zalando/go-keyring
+            # Reads the API key at the login prompt without echoing it.
+            - golang.org/x/term
+            # config.toml and the --insecure-storage credentials file.
+            - github.com/BurntSushi/toml
             - gitlab.com/loginid/software/loginid-aigw-cli.git
           deny:
             - pkg: github.com/sirupsen/logrus

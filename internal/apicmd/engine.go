@@ -16,6 +16,9 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/config"
+	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/credentials"
 )
 
 // Flag names every operation command shares. The generator refuses a spec whose
@@ -172,9 +175,9 @@ func run(cmd *cobra.Command, op *Operation, base string, args []string) error {
 		return fmt.Errorf("unsupported output format %q: only json is supported", out)
 	}
 
-	apiKey := flagOrEnv(cmd, flagAPIKey, envAPIKey)
-	if apiKey == "" {
-		return &ExitError{Code: ExitNotAuthenticated, Err: fmt.Errorf("no API key: pass --%s or set %s", flagAPIKey, envAPIKey)}
+	apiKey, err := resolveAPIKey(cmd)
+	if err != nil {
+		return err
 	}
 
 	reqURL := buildURL(cmd, op, base, args)
@@ -235,12 +238,32 @@ func run(cmd *cobra.Command, op *Operation, base string, args []string) error {
 	return printJSON(cmd.OutOrStdout(), respBody)
 }
 
-func flagOrEnv(cmd *cobra.Command, flag, env string) string {
-	if v, _ := cmd.Flags().GetString(flag); v != "" {
-		return v
+// resolveAPIKey takes the key from --api-key, then AIGW_API_KEY, then the key
+// `aigw login` saved.
+func resolveAPIKey(cmd *cobra.Command) (string, error) {
+	if v, _ := cmd.Flags().GetString(flagAPIKey); v != "" {
+		return v, nil
 	}
 
-	return os.Getenv(env)
+	if v := os.Getenv(envAPIKey); v != "" {
+		return v, nil
+	}
+
+	dir, err := config.Dir()
+	if err != nil {
+		return "", err
+	}
+
+	key, err := credentials.Load(dir, config.DefaultProfile)
+	if errors.Is(err, credentials.ErrNotLoggedIn) {
+		return "", &ExitError{Code: ExitNotAuthenticated, Err: fmt.Errorf("not logged in: run `aigw login`, pass --%s, or set %s", flagAPIKey, envAPIKey)}
+	}
+
+	if err != nil {
+		return "", &ExitError{Code: ExitNotAuthenticated, Err: err}
+	}
+
+	return key, nil
 }
 
 func buildURL(cmd *cobra.Command, op *Operation, base string, args []string) string {

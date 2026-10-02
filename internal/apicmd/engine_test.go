@@ -147,7 +147,7 @@ func TestExitCodes(t *testing.T) {
 		code     int
 		contains string
 	}{
-		{"no key", forbidden.URL, []string{projects, "list"}, apicmd.ExitNotAuthenticated, "no API key"},
+		{"no key", forbidden.URL, []string{projects, "list"}, apicmd.ExitNotAuthenticated, "not logged in"},
 		{"401", unauthorized.URL, []string{projects, "list", apiKey, "k"}, apicmd.ExitNotAuthenticated, "HTTP 401"},
 		{"403 names the scope", forbidden.URL, []string{projects, "create", "--name", "x", apiKey, "k"}, apicmd.ExitMissingScope, "project:write"},
 		{"404", notFound.URL, []string{projects, "get", "p1", apiKey, "k"}, 0, "not_found: Not found"},
@@ -156,6 +156,8 @@ func TestExitCodes(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("AIGW_API_KEY", "")
+			// An empty config dir, so a real `aigw login` on this machine is not used.
+			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 			_, err := runAigw(t, tc.base, tc.args...)
 
