@@ -1,5 +1,6 @@
 aigw
 dist/
+build/
 .env
 junit*.xml
 coverage.*

@@ -2,10 +2,13 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
+
+	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/apicmd"
 )
 
 // NewRootCommand builds the command tree. It is exported so tests can drive a
@@ -25,8 +28,24 @@ func NewRootCommand() *cobra.Command {
 	}
 
 	root.AddCommand(newVersionCommand())
+	apicmd.AddAll(root)
 
 	return root
+}
+
+// ExitCode maps an error from Execute to the process exit code: 0 for none, the
+// code an apicmd.ExitError carries, and 1 for anything else.
+func ExitCode(err error) int {
+	if err == nil {
+		return 0
+	}
+
+	var exitErr *apicmd.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.Code
+	}
+
+	return 1
 }
 
 // Execute runs the command tree and reports whether it failed. main decides the

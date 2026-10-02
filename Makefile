@@ -14,7 +14,17 @@ commit := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 module := $(shell go list -m)
 pkg_list := $(shell go list ./... | grep -v /test)
 
-.PHONY: all build lint_prep lint lint_fix lint_ci test test_unit clean
+# The devcon spec the API commands are generated from. The ref is pinned so the
+# same checkout always generates the same code; bump it on purpose, run
+# `make generate`, and review the diff. Set AIGW_SPEC to a local file to skip
+# the fetch, e.g. AIGW_SPEC=../loginid-aigw/api/rest/devcon/openapi3.yaml.
+AIGW_SPEC_REF ?= d05caee804f7abbac4981631164a22d3643c98ca
+AIGW_SPEC ?=
+spec_project := loginid%2Fsoftware%2Floginid-aigw
+spec_file_path := api%2Frest%2Fdevcon%2Fopenapi3.yaml
+spec_cache := build/devcon-openapi3-$(AIGW_SPEC_REF).yaml
+
+.PHONY: all build lint_prep lint lint_fix lint_ci test test_unit clean generate generate_check
 
 all: lint test_unit build
 
@@ -45,5 +55,21 @@ test_unit:
 	CGO_ENABLED=0 \
 	go test -count=1 $(pkg_list)
 
+$(spec_cache):
+	@mkdir -p build
+	glab api "projects/$(spec_project)/repository/files/$(spec_file_path)/raw?ref=$(AIGW_SPEC_REF)" > $@.tmp
+	mv $@.tmp $@
+
+generate: $(if $(AIGW_SPEC),,$(spec_cache))
+	go run -tags gen_commands ./internal/gen \
+		-spec $(or $(AIGW_SPEC),$(spec_cache)) \
+		-ref $(if $(AIGW_SPEC),local:$(AIGW_SPEC),$(AIGW_SPEC_REF))
+
+# Fails when the checked-in generated code does not match the pinned spec and
+# overlay, e.g. after an overlay edit without a regenerate.
+generate_check: generate
+	git diff --exit-code -- internal/apicmd/operations_gen.go
+
 clean:
 	rm -f $(EXE_NAME)
+	rm -rf build

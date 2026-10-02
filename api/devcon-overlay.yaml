@@ -1,0 +1,35 @@
+# Maps each devcon REST operation to its aigw command.
+#
+# internal/gen reads this next to the spec. Every operation in the spec must have
+# an entry here, and every entry must match an operation, so a new or removed API
+# route fails `make generate` until someone decides what it is called.
+#
+# Scopes are not set here: they come from each operation's x-required-scope.
+#
+# Naming: PATCH is `update`, because a partial change is what people usually
+# want. PUT, a full replace, is `replace`.
+operations:
+  projects#list:                       { command: projects list }
+  projects#create:                     { command: projects create }
+  projects#get:                        { command: projects get }
+  projects#update:                     { command: projects update }
+  projects#delete:                     { command: projects delete }
+
+  projects#listProxyClients:           { command: projects proxy-clients list }
+  projects#generateProxyClient:        { command: projects proxy-clients create }
+  projects#revokeProxyClient:          { command: projects proxy-clients revoke }
+
+  resources#list:                      { command: resources list }
+  resources#create:                    { command: resources create }
+  resources#get:                       { command: resources get }
+  resources#patch:                     { command: resources update }
+  resources#update:                    { command: resources replace }
+  resources#delete:                    { command: resources delete }
+
+  resources#getAuthenticationSettings: { command: resources auth-settings get }
+  resources#setAuthenticationSettings: { command: resources auth-settings update }
+
+  resources#listScopes:                { command: resources scopes list }
+
+  resources#listSigningKeys:           { command: resources signing-keys list }
+  resources#generateSigningKey:        { command: resources signing-keys create }

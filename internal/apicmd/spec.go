@@ -1,0 +1,63 @@
+// Package apicmd turns generated operation tables into cobra commands.
+//
+// The split follows the Stripe CLI: internal/gen writes operations_gen.go, which
+// holds data only, and everything that acts on that data lives here, written by
+// hand. A bug in flag handling or request building is fixed once, in this
+// package, and never by regenerating.
+package apicmd
+
+// Operation is one API call, as the generator read it from the spec and the
+// overlay.
+type Operation struct {
+	// ID is the spec's operationId, e.g. "resources#create".
+	ID string
+	// Command is the command path under the root, e.g. ["resources", "create"].
+	Command []string
+	Short   string
+	Long    string
+	Method  string
+	// Path is the URL template, e.g. "/projects/{projectId}/resources".
+	Path string
+	// Scope is the x-required-scope value the API key must carry.
+	Scope string
+	// Args are path parameters taken positionally, in order.
+	Args []Param
+	// Params are path, query and flattened body parameters taken as flags.
+	Params []Param
+	// Fields maps every settable body path to its type, for -d. Array elements
+	// are written "[]", e.g. "scopes[].value".
+	Fields map[string]string
+	// HasBody is true when the operation takes a JSON request body.
+	HasBody bool
+}
+
+// Param is one input an operation takes.
+type Param struct {
+	// Name is the API name. Body params are dotted, e.g. "exchange.audience".
+	Name string
+	// Flag is the CLI name, e.g. "exchange.actor-client-id". Empty for Args.
+	Flag string
+	// In is "path", "query" or "body".
+	In string
+	// Type is "string", "integer", "number", "boolean", or "[]" plus one of those.
+	Type     string
+	Required bool
+	Enum     []string
+	Desc     string
+}
+
+// Parameter locations.
+const (
+	InPath  = "path"
+	InQuery = "query"
+	InBody  = "body"
+)
+
+// Scalar types. A list type is ListPrefix plus one of these.
+const (
+	TypeString  = "string"
+	TypeInteger = "integer"
+	TypeNumber  = "number"
+	TypeBoolean = "boolean"
+	ListPrefix  = "[]"
+)
