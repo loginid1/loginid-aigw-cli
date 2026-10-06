@@ -45,7 +45,10 @@ build:
       - GOOS: windows
         GOARCH: [amd64]
   script:
-    - EXE_NAME="aigw-${GOOS}-${GOARCH}$([ "$GOOS" = windows ] && echo .exe)"
+    - EXE_NAME="aigw-${GOOS}-${GOARCH}"
+    # An if, not `[ ... ] && ...`: that form exits non-zero for every other
+    # GOOS, and the job script stops on the first non-zero exit.
+    - if [ "$GOOS" = windows ]; then EXE_NAME="${EXE_NAME}.exe"; fi
     - make build EXE_NAME="$EXE_NAME"
   artifacts:
     paths:
