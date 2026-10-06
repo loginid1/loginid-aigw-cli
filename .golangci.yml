@@ -1,0 +1,152 @@
+version: "2"
+
+output:
+  formats:
+    text:
+      path: stdout
+      print-linter-name: true
+      print-issued-lines: true
+    junit-xml:
+      path: junit-lint.xml
+  path-prefix: ""
+
+linters:
+  default: all
+  enable:
+    - gomodguard_v2
+  disable:
+    - containedctx    # Check for context.Context in structs (false positive in tests)
+    - nlreturn        # Check for newlines before return statements (too strict for inline functions)
+    - wsl             # Whitespace linter (too strict for test code)
+    - contextcheck     # Check whether the function uses a non-inherited context.
+    - cyclop           # Checks function and package cyclomatic complexity.
+    - err113           # Go linter to check the errors handling expressions.
+    - exhaustive       # Check exhaustiveness of enum switch statements.
+    - exhaustruct      # Checks if all structure fields are initialized.
+    - forbidigo        # Forbids identifiers.
+    - forcetypeassert  # Finds forced type assertions.
+    - funlen           # Checks for long functions.
+    - gochecknoglobals # Check that no global variables exist.
+    - gochecknoinits   # Checks that no init functions are present in Go code.
+    - gocognit         # Computes and checks the cognitive complexity of functions.
+    - godox            # Detects usage of FIXME, TODO and other keywords inside comments.
+    - gomoddirectives  # Manage the use of 'replace', 'retract', and 'excludes' directives in go.mod.
+    - gomodguard
+    - interfacebloat   # A linter that checks the number of methods inside an interface.
+    - ireturn          # Accept Interfaces, Return Concrete Types.
+    - lll              # Reports long lines.
+    - maintidx         # Maintidx measures the maintainability index of each function.
+    - mnd              # An analyzer to detect magic numbers.
+    - musttag          # Enforce field tags in (un)marshaled structs.
+    - nestif           # Reports deeply nested if statements.
+    - nilnil           # Checks that there is no simultaneous return of nil error and an invalid value.
+    - paralleltest     # Detects missing usage of t.Parallel() method in your Go test.
+    - tagliatelle      # Checks the struct tags.
+    - testpackage      # Linter that makes you use a separate _test package.
+    - varnamelen       # Checks that the length of a variable's name matches its scope.
+    - wrapcheck        # Checks that errors returned from external packages are wrapped.
+    - wsl              # Add or remove empty lines.
+  settings:
+    depguard:
+      rules:
+        main:
+          files:
+            - $all
+            - '!$test'
+            - '!**/test/**/*.go'
+            - '!**/*_a _file.go'
+          allow:
+            # Kept deliberately short. depguard is a supply-chain control: every
+            # new dependency is an explicit decision, recorded here, on a binary
+            # we sign and hand to external developers.
+            - $gostd
+            - github.com/spf13/cobra
+            # OS credential store for `aigw login`. Chosen over 99designs/keyring
+            # because it needs no cgo on macOS, and our builds are CGO_ENABLED=0.
+            - github.com/zalando/go-keyring
+            # Reads the API key at the login prompt without echoing it.
+            - golang.org/x/term
+            # config.toml and the --insecure-storage credentials file.
+            - github.com/BurntSushi/toml
+            - gitlab.com/loginid/software/loginid-aigw-cli.git
+          deny:
+            - pkg: github.com/sirupsen/logrus
+              desc: use log/slog instead
+            - pkg: github.com/inconshreveable/log15
+              desc: use log/sslog instead
+            - pkg: io/ioutil
+              desc: 'replaced by io and os packages since Go 1.16: https://tip.golang.org/doc/go1.16#ioutil'
+        tests:
+          list-mode: lax
+          files:
+            - $test
+            - '**/test/**/*.go'
+          deny:
+            - pkg: github.com/sirupsen/logrus
+              desc: use log/slog instead
+            - pkg: github.com/inconshreveable/log15
+              desc: use log/sslog instead
+            - pkg: io/ioutil
+              desc: 'replaced by io and os packages since Go 1.16: https://tip.golang.org/doc/go1.16#ioutil'
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - experimental
+        - opinionated
+        - performance
+        - style
+    govet:
+      disable:
+        - fieldalignment
+      enable-all: true
+    misspell:
+      locale: US
+    revive:
+      rules:
+        - name: dot-imports
+          disabled: true
+    staticcheck:
+      checks:
+        - all
+      dot-import-whitelist:
+        - goa.design/goa/v3/dsl
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - build
+      - tools
+      - third_party$
+      - builtin$
+      - examples$
+    rules:
+      - path: (.+)_test\.go
+        linters:
+          - dupl
+          # Tests spell out command lines; constants for "create" or "--name"
+          # would make them harder to read, not safer.
+          - goconst
+          - gosec
+      - path: internal/api/gql/identity_utils_test\.go
+        linters:
+          - wsl
+
+issues:
+  uniq-by-line: true
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - build
+      - tools
+      - third_party$
+      - builtin$
+      - examples$

@@ -1,0 +1,13 @@
+aigw
+dist/
+build/
+.env
+junit*.xml
+coverage.*
+gl-code-quality-report.json
+
+# Assistant working material — local only, never part of the project
+CLAUDE.md
+.claude/
+AGENTS.md
+llm/
