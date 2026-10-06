@@ -1,0 +1,86 @@
+# SPDX-FileCopyrightText:  Copyright © LoginID Inc.
+# SPDX-License-Identifier: Proprietary
+
+include:
+  - template: Security/Dependency-Scanning.gitlab-ci.yml
+  - template: Security/Secret-Detection.gitlab-ci.yml
+  - template: Security/SAST.gitlab-ci.yml
+
+variables:
+  GOLANG_VERSION: "1.26"
+  SAST_EXCLUDED_PATHS: "*_test.go, *.md"
+
+stages:
+  - build
+  - test
+
+.build_common_rules:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" # only run on MRs
+    - if: $CI_COMMIT_TAG
+      variables:
+        PKG_VERSION: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - when: never
+
+.build_common:
+  image: golang:${GOLANG_VERSION}-trixie
+  variables:
+    PKG_VERSION: 0.0.0-dev.${CI_PIPELINE_ID}
+  extends:
+    - .build_common_rules
+
+# CGO_ENABLED=0 (set in the Makefile) is what lets one Linux runner build every
+# target, macOS included: go-keyring reaches the Keychain without cgo.
+build:
+  extends:
+    - .build_common
+  stage: build
+  parallel:
+    matrix:
+      - GOOS: linux
+        GOARCH: [amd64, arm64]
+      - GOOS: darwin
+        GOARCH: [amd64, arm64]
+      - GOOS: windows
+        GOARCH: [amd64]
+  script:
+    - EXE_NAME="aigw-${GOOS}-${GOARCH}$([ "$GOOS" = windows ] && echo .exe)"
+    - make build EXE_NAME="$EXE_NAME"
+  artifacts:
+    paths:
+      - ./aigw-*
+    expire_in: 30 min
+
+lint:
+  extends:
+    - .build_common
+  stage: test
+  script:
+    - make lint_ci
+  artifacts:
+    when: always
+    paths:
+      - gl-code-quality-report.json
+    reports:
+      codequality: gl-code-quality-report.json
+
+unit-test:
+  extends:
+    - .build_common
+  stage: test
+  script:
+    - make test_coverage
+  coverage: '/^total:\s+\(statements\)\s+(\d+\.\d+%)/'
+
+# Regenerates the API commands from the pinned spec and fails if the result
+# differs from the checked-in operations_gen.go. It reads loginid-aigw with the
+# job token, so it stays allowed to fail until loginid-aigw lists this project
+# in Settings > CI/CD > Job token permissions.
+generate-check:
+  extends:
+    - .build_common
+  stage: test
+  script:
+    - make generate_check
+  allow_failure: true

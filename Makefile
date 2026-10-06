@@ -24,7 +24,7 @@ spec_project := loginid%2Fsoftware%2Floginid-aigw
 spec_file_path := api%2Frest%2Fdevcon%2Fopenapi3.yaml
 spec_cache := build/devcon-openapi3-$(AIGW_SPEC_REF).yaml
 
-.PHONY: all build lint_prep lint lint_fix lint_ci test test_unit clean generate generate_check
+.PHONY: all build lint_prep lint lint_fix lint_ci test test_unit test_coverage clean generate generate_check
 
 all: lint test_unit build
 
@@ -55,9 +55,22 @@ test_unit:
 	CGO_ENABLED=0 \
 	go test -count=1 $(pkg_list)
 
+# CI reads the total from the last line of `go tool cover -func`.
+test_coverage:
+	CGO_ENABLED=0 \
+	go test -count=1 -coverprofile=coverage.txt $(pkg_list)
+	go tool cover -func=coverage.txt | tail -1
+
+# Locally this uses your glab login. In CI it uses the job token, which only
+# works once loginid-aigw allows this project in its job token allowlist.
 $(spec_cache):
 	@mkdir -p build
+ifdef CI_JOB_TOKEN
+	curl -sSf --header "JOB-TOKEN: $(CI_JOB_TOKEN)" \
+		"$(CI_API_V4_URL)/projects/$(spec_project)/repository/files/$(spec_file_path)/raw?ref=$(AIGW_SPEC_REF)" > $@.tmp
+else
 	glab api "projects/$(spec_project)/repository/files/$(spec_file_path)/raw?ref=$(AIGW_SPEC_REF)" > $@.tmp
+endif
 	mv $@.tmp $@
 
 generate: $(if $(AIGW_SPEC),,$(spec_cache))
