@@ -118,10 +118,11 @@ func newOperationCommand(op *Operation, base string) *cobra.Command {
 	}
 
 	cmd := &cobra.Command{
-		Use:   use.String(),
-		Short: op.Short,
-		Long:  long,
-		Args:  cobra.ExactArgs(len(op.Args)),
+		Use:     use.String(),
+		Short:   op.Short,
+		Long:    long,
+		Example: requiredExample(op),
+		Args:    cobra.ExactArgs(len(op.Args)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return run(cmd, op, base, args)
 		},
@@ -132,8 +133,14 @@ func newOperationCommand(op *Operation, base string) *cobra.Command {
 	for _, p := range op.Params {
 		desc := p.Desc
 		if len(p.Enum) > 0 {
-			desc = strings.TrimSpace(desc + " (one of: " + strings.Join(p.Enum, ", ") + ")")
+			desc += " (one of: " + strings.Join(p.Enum, ", ") + ")"
 		}
+
+		if p.Required {
+			desc += " (required)"
+		}
+
+		desc = strings.TrimSpace(desc)
 
 		switch p.Type {
 		case TypeBoolean:
@@ -236,6 +243,43 @@ func run(cmd *cobra.Command, op *Operation, base string, args []string) error {
 	}
 
 	return printJSON(cmd.OutOrStdout(), respBody)
+}
+
+// requiredExample shows the command with every unconditionally required
+// input, as the Stripe CLI's "# required fields" line does. Fields that are
+// required only inside an optional object are not listed; the server reports
+// those.
+func requiredExample(op *Operation) string {
+	if len(op.Args) == 0 && !slices.ContainsFunc(op.Params, func(p Param) bool { return p.Required }) {
+		return ""
+	}
+
+	var b strings.Builder
+
+	b.WriteString("  # required fields\n  aigw ")
+	b.WriteString(strings.Join(op.Command, " "))
+
+	for _, a := range op.Args {
+		b.WriteString(" <" + kebab(a.Name) + ">")
+	}
+
+	for _, p := range op.Params {
+		if !p.Required {
+			continue
+		}
+
+		switch {
+		case p.Type == TypeBoolean:
+			b.WriteString(" --" + p.Flag)
+		case len(p.Enum) > 0:
+			b.WriteString(" --" + p.Flag + " " + p.Enum[0])
+		default:
+			// "--exchange.client-id <client-id>", "--project-id <project-id>"
+			b.WriteString(" --" + p.Flag + " <" + p.Flag[strings.LastIndex(p.Flag, ".")+1:] + ">")
+		}
+	}
+
+	return b.String()
 }
 
 // resolveAPIKey takes the key from --api-key, then AIGW_API_KEY, then the key

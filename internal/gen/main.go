@@ -316,7 +316,15 @@ func walkBody(s *spec, obj *schema, apiPrefix, flagPrefix string, required []str
 
 		switch prop.Type {
 		case "object":
-			if err := walkBody(s, prop, apiName+".", flagName+".", prop.Required, fields, addFlag); err != nil {
+			// As in the Stripe CLI, a nested field counts as required only
+			// when every object above it is required too. "Required when the
+			// parent is sent" is the server's to check.
+			var nested []string
+			if slices.Contains(required, name) {
+				nested = prop.Required
+			}
+
+			if err := walkBody(s, prop, apiName+".", flagName+".", nested, fields, addFlag); err != nil {
 				return err
 			}
 		case "array":

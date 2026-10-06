@@ -127,6 +127,9 @@ linters:
       - path: (.+)_test\.go
         linters:
           - dupl
+          # Tests spell out command lines; constants for "create" or "--name"
+          # would make them harder to read, not safer.
+          - goconst
           - gosec
       - path: internal/api/gql/identity_utils_test\.go
         linters:

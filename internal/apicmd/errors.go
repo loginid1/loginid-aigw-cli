@@ -23,21 +23,41 @@ func (e *ExitError) Error() string { return e.Err.Error() }
 
 func (e *ExitError) Unwrap() error { return e.Err }
 
-// appError is the API's error body.
-type appError struct {
+// errorBody reads both error shapes the API sends. Its own handlers answer
+// with an AppError (msg, msgCode). Goa, which validates requests before any
+// handler runs, answers with its default error (name, message), e.g. for a
+// missing required field.
+type errorBody struct {
 	Msg     string `json:"msg"`
 	MsgCode string `json:"msgCode"`
+	Name    string `json:"name"`
+	Message string `json:"message"`
+}
+
+// text renders the body as "code: message", or "" when it is neither shape.
+func (e errorBody) text() string {
+	code, msg := e.MsgCode, e.Msg
+	if msg == "" {
+		code, msg = e.Name, e.Message
+	}
+
+	if msg == "" {
+		return ""
+	}
+
+	if code == "" {
+		return msg
+	}
+
+	return code + ": " + msg
 }
 
 func responseError(op *Operation, status int, body []byte) error {
 	msg := strings.TrimSpace(string(body))
 
-	var ae appError
-	if json.Unmarshal(body, &ae) == nil && ae.Msg != "" {
-		msg = ae.Msg
-		if ae.MsgCode != "" {
-			msg = ae.MsgCode + ": " + msg
-		}
+	var eb errorBody
+	if json.Unmarshal(body, &eb) == nil && eb.text() != "" {
+		msg = eb.text()
 	}
 
 	if msg == "" {

@@ -228,3 +228,57 @@ func TestDataRejectsBadInput(t *testing.T) {
 		t.Error("a request was sent for invalid -d input")
 	}
 }
+
+func TestHelpMarksRequiredFields(t *testing.T) {
+	t.Parallel()
+
+	out, err := runAigw(t, "http://unused.invalid", "resources", "replace", "--help")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []string{
+		"# required fields",
+		"aigw resources replace <resource-id> --project-id <project-id> --idps <idps> --kind EXCHANGE --name <name>",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("help lacks %q:\n%s", want, out)
+		}
+	}
+
+	// A field required only inside the optional exchange object is not
+	// marked: the server checks it, as in the Stripe CLI.
+	for line := range strings.SplitSeq(out, "\n") {
+		if strings.Contains(line, "--exchange.client-id") && strings.Contains(line, "(required)") {
+			t.Errorf("conditionally required flag marked required: %q", line)
+		}
+	}
+}
+
+func TestErrorBodyShapes(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct{ body, want string }{
+		"AppError": {
+			`{"msg":"project not found","msgCode":"not_found"}`,
+			"HTTP 400: not_found: project not found",
+		},
+		// What Goa sends for a request that fails validation, as seen
+		// against the real server.
+		"Goa validation": {
+			`{"name":"missing_field","id":"QuIrpdzS","message":"\"kind\" is missing from body","temporary":false,"timeout":false,"fault":false}`,
+			`HTTP 400: missing_field: "kind" is missing from body`,
+		},
+		"not JSON": {"upstream timeout", "HTTP 400: upstream timeout"},
+		"empty":    {"", "HTTP 400: Bad Request"},
+	}
+
+	for name, tc := range cases {
+		srv, _ := serve(t, http.StatusBadRequest, tc.body)
+
+		_, err := runAigw(t, srv.URL, "projects", "list", apiKey, "k")
+		if err == nil || !strings.HasSuffix(err.Error(), tc.want) {
+			t.Errorf("%s: error = %v, want suffix %q", name, err, tc.want)
+		}
+	}
+}
