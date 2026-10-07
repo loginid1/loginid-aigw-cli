@@ -1,0 +1,62 @@
+# Builds the per-OS release artifacts devops distributes: for each target, the
+# bare binary and a zip of it, plus checksums.txt, attached to a GitLab release.
+# Installers, signing and public hosting are devops' side, not this file's.
+#
+# CI runs this on every v* tag (see .gitlab-ci.yml). Locally:
+#   goreleaser release --snapshot --clean   # build into dist/, upload nothing
+version: 2
+
+project_name: aigw
+
+builds:
+  - id: aigw
+    main: ./main.go
+    binary: aigw
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X gitlab.com/loginid/software/loginid-aigw-cli.git/internal/version.Version={{ .Version }}
+      - -X gitlab.com/loginid/software/loginid-aigw-cli.git/internal/version.GitCommit={{ .ShortCommit }}
+    # Linux first. macOS and Windows already build in CI; add them here when
+    # devops wants their artifacts.
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: zip
+    formats: [zip]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    # The binary only. GoReleaser would otherwise add README and LICENSE files.
+    files:
+      - none*
+  - id: binary
+    formats: [binary]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^Merge branch"
+
+release:
+  gitlab:
+    owner: loginid/software
+    name: loginid-aigw-cli
+  # Tags like v0.1.0-alpha.1 are marked as pre-releases.
+  prerelease: auto
+
+# Upload through the generic package registry with CI_JOB_TOKEN, so the
+# release job needs no personal or project access token.
+gitlab_urls:
+  use_package_registry: true
+  use_job_token: true

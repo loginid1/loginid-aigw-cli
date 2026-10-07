@@ -13,6 +13,7 @@ variables:
 stages:
   - build
   - test
+  - release
 
 .build_common_rules:
   rules:
@@ -87,3 +88,43 @@ generate-check:
   script:
     - make generate_check
   allow_failure: true
+
+.goreleaser:
+  image:
+    name: goreleaser/goreleaser:v2.18.2
+    entrypoint: [""]
+  # GoReleaser reads tags and the changelog from git history.
+  variables:
+    GIT_DEPTH: 0
+
+# Builds the release artifacts on every MR without uploading anything, so a
+# broken .goreleaser.yaml shows up before a tag does.
+goreleaser-snapshot:
+  extends:
+    - .goreleaser
+  stage: build
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - goreleaser check
+    - goreleaser release --snapshot --clean
+  artifacts:
+    paths:
+      - dist/aigw_*
+      - dist/checksums.txt
+    expire_in: 1 day
+
+# On a v* tag, after lint and tests pass: builds the per-OS binaries and zips
+# and attaches them, with checksums.txt, to a GitLab release for devops.
+# Uploads use CI_JOB_TOKEN (see gitlab_urls in .goreleaser.yaml).
+release:
+  extends:
+    - .goreleaser
+  stage: release
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/
+  needs:
+    - lint
+    - unit-test
+  script:
+    - goreleaser release --clean
