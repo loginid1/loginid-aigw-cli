@@ -52,7 +52,7 @@ func Save(dir, profile, key string, insecure bool) (string, error) {
 		where = fileStorePath(dir)
 		err = writeFileKey(dir, profile, key)
 	} else {
-		err = keyring.Set(keyringService, profile, key)
+		err = keyringSet(profile, key)
 		if err != nil {
 			err = fmt.Errorf("save to %s: %w\n"+
 				"No usable credential store here. Set AIGW_API_KEY instead, or run "+
@@ -96,7 +96,7 @@ func Load(dir, profile string) (string, error) {
 	case config.StorageFile:
 		key, err = readFileKey(dir, profile)
 	default:
-		key, err = keyring.Get(keyringService, profile)
+		key, err = keyringGet(profile)
 		if errors.Is(err, keyring.ErrNotFound) {
 			err = ErrNotLoggedIn
 		}
@@ -162,7 +162,7 @@ func deleteKey(dir, profile, storage string) error {
 		return deleteFileKey(dir, profile)
 	}
 
-	err := keyring.Delete(keyringService, profile)
+	err := keyringDelete(profile)
 	if err != nil && !errors.Is(err, keyring.ErrNotFound) {
 		return fmt.Errorf("delete from %s: %w", storeName(), err)
 	}

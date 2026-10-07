@@ -3,7 +3,6 @@ package apicmd
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,12 +12,10 @@ import (
 	"os"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
-	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/config"
-	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/credentials"
+	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/client"
 )
 
 // Flag names every operation command shares. The generator refuses a spec whose
@@ -29,12 +26,8 @@ const (
 	flagOutput  = "output"
 	flagConfirm = "confirm"
 
-	envAPIKey = "AIGW_API_KEY" //nolint:gosec // the name of an env var, not a credential
-
 	// TEMP: see AddAll.
 	envTempAPIBase = "AIGW_TEMP_API_BASE"
-
-	requestTimeout = 30 * time.Second
 )
 
 // AddAll registers every generated operation under root, building the noun
@@ -81,7 +74,7 @@ func ensureGroups(root *cobra.Command, path []string) *cobra.Command {
 			}
 			if depth == 0 {
 				pf := next.PersistentFlags()
-				pf.String(flagAPIKey, "", "API key to authenticate with (env "+envAPIKey+")")
+				pf.String(flagAPIKey, "", "API key to authenticate with (env "+client.EnvAPIKey+")")
 			}
 
 			cur.AddCommand(next)
@@ -182,67 +175,56 @@ func run(cmd *cobra.Command, op *Operation, base string, args []string) error {
 		return fmt.Errorf("unsupported output format %q: only json is supported", out)
 	}
 
-	apiKey, err := resolveAPIKey(cmd)
+	flagKey, _ := cmd.Flags().GetString(flagAPIKey)
+
+	apiKey, err := client.ResolveAPIKey(flagKey)
 	if err != nil {
-		return err
+		return exitError(err)
 	}
 
-	reqURL := buildURL(cmd, op, base, args)
+	req := &client.Request{
+		Method:     op.Method,
+		Path:       op.Path,
+		PathParams: map[string]string{},
+		Query:      url.Values{},
+		Scope:      op.Scope,
+	}
 
-	var body io.Reader
+	for i, a := range op.Args {
+		req.PathParams[a.Name] = args[i]
+	}
+
+	for _, p := range op.Params {
+		switch p.In {
+		case InPath:
+			req.PathParams[p.Name], _ = cmd.Flags().GetString(p.Flag)
+		case InQuery:
+			if cmd.Flags().Changed(p.Flag) {
+				req.Query.Set(p.Name, cmd.Flags().Lookup(p.Flag).Value.String())
+			}
+		}
+	}
 
 	if op.HasBody {
-		payload, bodyErr := buildBody(cmd, op)
-		if bodyErr != nil {
-			return bodyErr
+		req.Body, err = buildBody(cmd, op)
+		if err != nil {
+			return err
 		}
-
-		raw, encErr := json.Marshal(payload)
-		if encErr != nil {
-			return fmt.Errorf("encode request body: %w", encErr)
-		}
-
-		body = bytes.NewReader(raw)
 	}
 
 	if op.Method == http.MethodDelete {
-		confirmErr := confirmDelete(cmd, op, args)
-		if confirmErr != nil {
-			return confirmErr
+		err = confirmDelete(cmd, op, args)
+		if err != nil {
+			return err
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(cmd.Context(), requestTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, op.Method, reqURL, body) //nolint:gosec // TEMP: base can come from AIGW_TEMP_API_BASE; see AddAll
+	body, err := client.New(base, apiKey).Do(cmd.Context(), req)
 	if err != nil {
-		return fmt.Errorf("build request: %w", err)
+		return exitError(err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-	req.Header.Set("Accept", "application/json")
-
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-
-	resp, err := http.DefaultClient.Do(req) //nolint:gosec // TEMP: see AddAll
-	if err != nil {
-		return fmt.Errorf("%s %s: %w", op.Method, op.Path, err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read response: %w", err)
-	}
-
-	if resp.StatusCode >= http.StatusBadRequest {
-		return responseError(op, resp.StatusCode, respBody)
-	}
-
-	return printJSON(cmd.OutOrStdout(), respBody)
+	return printJSON(cmd.OutOrStdout(), body)
 }
 
 // requiredExample shows the command with every unconditionally required
@@ -280,62 +262,6 @@ func requiredExample(op *Operation) string {
 	}
 
 	return b.String()
-}
-
-// resolveAPIKey takes the key from --api-key, then AIGW_API_KEY, then the key
-// `aigw login` saved.
-func resolveAPIKey(cmd *cobra.Command) (string, error) {
-	if v, _ := cmd.Flags().GetString(flagAPIKey); v != "" {
-		return v, nil
-	}
-
-	if v := os.Getenv(envAPIKey); v != "" {
-		return v, nil
-	}
-
-	dir, err := config.Dir()
-	if err != nil {
-		return "", err
-	}
-
-	key, err := credentials.Load(dir, config.DefaultProfile)
-	if errors.Is(err, credentials.ErrNotLoggedIn) {
-		return "", &ExitError{Code: ExitNotAuthenticated, Err: fmt.Errorf("not logged in: run `aigw login`, pass --%s, or set %s", flagAPIKey, envAPIKey)}
-	}
-
-	if err != nil {
-		return "", &ExitError{Code: ExitNotAuthenticated, Err: err}
-	}
-
-	return key, nil
-}
-
-func buildURL(cmd *cobra.Command, op *Operation, base string, args []string) string {
-	path := op.Path
-	for i, a := range op.Args {
-		path = strings.Replace(path, "{"+a.Name+"}", url.PathEscape(args[i]), 1)
-	}
-
-	query := url.Values{}
-
-	for _, p := range op.Params {
-		switch p.In {
-		case InPath:
-			v, _ := cmd.Flags().GetString(p.Flag)
-			path = strings.Replace(path, "{"+p.Name+"}", url.PathEscape(v), 1)
-		case InQuery:
-			if cmd.Flags().Changed(p.Flag) {
-				query.Set(p.Name, cmd.Flags().Lookup(p.Flag).Value.String())
-			}
-		}
-	}
-
-	u := strings.TrimSuffix(base, "/") + path
-	if len(query) > 0 {
-		u += "?" + query.Encode()
-	}
-
-	return u
 }
 
 // buildBody assembles the request body from body flags first, then -d values,

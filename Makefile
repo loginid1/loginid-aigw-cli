@@ -61,13 +61,18 @@ test_coverage:
 	go test -count=1 -coverprofile=coverage.txt $(pkg_list)
 	go tool cover -func=coverage.txt | tail -1
 
-# Locally this uses your glab login. In CI it uses the job token, which only
-# works once loginid-aigw allows this project in its job token allowlist.
+# Locally this uses your glab login. In CI it fetches the one commit over git
+# with the job token: git is a documented job-token use, the files API is not.
+# It works once loginid-aigw lists this project in its job token allowlist.
 $(spec_cache):
 	@mkdir -p build
 ifdef CI_JOB_TOKEN
-	curl -sSf --header "JOB-TOKEN: $(CI_JOB_TOKEN)" \
-		"$(CI_API_V4_URL)/projects/$(spec_project)/repository/files/$(spec_file_path)/raw?ref=$(AIGW_SPEC_REF)" > $@.tmp
+	rm -rf build/spec-repo && git init -q build/spec-repo
+	@echo "git fetch loginid-aigw $(AIGW_SPEC_REF)"
+	@git -C build/spec-repo fetch -q --depth 1 \
+		"https://gitlab-ci-token:$(CI_JOB_TOKEN)@$(CI_SERVER_HOST)/loginid/software/loginid-aigw.git" $(AIGW_SPEC_REF)
+	git -C build/spec-repo show FETCH_HEAD:api/rest/devcon/openapi3.yaml > $@.tmp
+	rm -rf build/spec-repo
 else
 	glab api "projects/$(spec_project)/repository/files/$(spec_file_path)/raw?ref=$(AIGW_SPEC_REF)" > $@.tmp
 endif
