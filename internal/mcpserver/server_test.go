@@ -201,8 +201,13 @@ func TestErrorsReachTheModel(t *testing.T) {
 		want string
 	}{
 		{"API 403", forbidden, "projects_delete", map[string]any{"projectId": "p"}, "requires scope project:write"},
-		{"missing path argument", ok, "projects_get", map[string]any{}, `missing required argument "projectId"`},
-		{"unknown argument", ok, "projects_get", map[string]any{"projectId": "p", "bogus": 1}, "unknown arguments: bogus"},
+		{"missing path argument", ok, "projects_get", map[string]any{}, `missing properties: ["projectId"]`},
+		{"unknown argument", ok, "projects_get", map[string]any{"projectId": "p", "bogus": 1}, `additional properties ["bogus"]`},
+		// The cases the QA review found going through to the API.
+		{"typo in a body field", ok, "projects_update", map[string]any{"projectId": "p", "nme": "x"}, `additional properties ["nme"]`},
+		{"bad enum", ok, "resources_update", map[string]any{"projectId": "p", "resourceId": "r", "kind": "BAD"}, "enum"},
+		{"wrong type", ok, "projects_get", map[string]any{"projectId": 5}, "type"},
+		{"path value that moves the URL", ok, "projects_get", map[string]any{"projectId": ".."}, `".." is not a valid ID`},
 	}
 
 	for _, tc := range cases {
@@ -241,5 +246,16 @@ func TestNoContentResult(t *testing.T) {
 
 	if got.method != http.MethodDelete || !strings.HasPrefix(text(res), "Done.") {
 		t.Errorf("sent %s, result %q", got.method, text(res))
+	}
+}
+
+func TestEveryInputSchemaCompiles(t *testing.T) {
+	t.Parallel()
+
+	// New panics on a schema that does not compile; offering every tool
+	// compiles every schema.
+	s, _ := connect(t, mcpserver.Options{ExposeSecrets: true}, http.StatusOK, `{}`)
+	if n := len(toolNames(t, s)); n != len(apicmd.Operations) {
+		t.Fatalf("%d tools for %d operations", n, len(apicmd.Operations))
 	}
 }

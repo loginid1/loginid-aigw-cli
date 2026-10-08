@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/apicmd"
@@ -31,6 +32,9 @@ type Options struct {
 	// it; `aigw mcp` leaves it empty so a later `aigw login` takes effect
 	// without a restart.
 	APIKey string
+	// UseSavedKey lets calls fall back to the key `aigw login` saved. It is
+	// off when the base URL is a temporary override (see apicmd.Target).
+	UseSavedKey bool
 	// ReadOnly registers only the tools that make GET requests.
 	ReadOnly bool
 	// ExposeSecrets registers the tools whose response carries a one-time
@@ -57,7 +61,7 @@ func New(ops []apicmd.Operation, opts Options) *mcp.Server {
 			continue
 		}
 
-		srv.AddTool(tool(op), handler(op, opts))
+		srv.AddTool(tool(op), handler(op, mustResolve(op), opts))
 	}
 
 	return srv
@@ -99,8 +103,56 @@ func tool(op *apicmd.Operation) *mcp.Tool {
 	}
 }
 
-func handler(op *apicmd.Operation, opts Options) mcp.ToolHandler {
+// mustResolve compiles op's input schema for validation. The schema is
+// generated, so one that does not compile is a generator bug; a test resolves
+// every operation's schema, so this cannot fail at run time unnoticed.
+func mustResolve(op *apicmd.Operation) *jsonschema.Resolved {
+	var schema jsonschema.Schema
+
+	err := json.Unmarshal([]byte(op.InputSchema), &schema)
+	if err == nil {
+		var resolved *jsonschema.Resolved
+
+		resolved, err = schema.Resolve(nil)
+		if err == nil {
+			return resolved
+		}
+	}
+
+	panic(fmt.Sprintf("mcpserver: input schema of %s: %v", op.ID, err))
+}
+
+// validate checks the arguments against the tool's input schema. The SDK
+// leaves this to low-level tools like these, and without it an unknown field
+// (a typo such as "nme"), a bad enum value or a missing required field would
+// be sent to the API and could even succeed.
+func validate(schema *jsonschema.Resolved, raw json.RawMessage) error {
+	if len(raw) == 0 {
+		raw = json.RawMessage("{}")
+	}
+
+	var args any
+
+	err := json.Unmarshal(raw, &args)
+	if err != nil {
+		return fmt.Errorf("arguments must be a JSON object: %w", err)
+	}
+
+	err = schema.Validate(args)
+	if err != nil {
+		return fmt.Errorf("invalid arguments: %w", err)
+	}
+
+	return nil
+}
+
+func handler(op *apicmd.Operation, schema *jsonschema.Resolved, opts Options) mcp.ToolHandler {
 	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		err := validate(schema, req.Params.Arguments)
+		if err != nil {
+			return toolError(err.Error()), nil
+		}
+
 		apiReq, err := request(op, req.Params.Arguments)
 		if err != nil {
 			return toolError(err.Error()), nil
@@ -108,10 +160,15 @@ func handler(op *apicmd.Operation, opts Options) mcp.ToolHandler {
 
 		key := opts.APIKey
 		if key == "" {
-			key, err = client.ResolveAPIKey("")
+			key, err = client.ResolveAPIKey("", opts.UseSavedKey)
 		}
 
 		if errors.Is(err, client.ErrNotLoggedIn) {
+			if !opts.UseSavedKey {
+				return toolError("No API key: set " + client.EnvAPIKey + " in this MCP server's environment. " +
+					"The saved login is not used while the base URL is overridden."), nil
+			}
+
 			return toolError("aigw is not logged in. Run `aigw login` in a terminal, or set " +
 				client.EnvAPIKey + " in this MCP server's environment."), nil
 		}

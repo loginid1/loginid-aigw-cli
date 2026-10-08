@@ -147,9 +147,15 @@ func readKey(cmd *cobra.Command, fromStdin bool) (string, error) {
 
 	switch {
 	case fromStdin:
-		b, err := io.ReadAll(io.LimitReader(in, maxKeyBytes))
+		// One byte past the limit, so an oversized key is refused rather
+		// than cut short and saved broken.
+		b, err := io.ReadAll(io.LimitReader(in, maxKeyBytes+1))
 		if err != nil {
 			return "", fmt.Errorf("read API key: %w", err)
+		}
+
+		if len(b) > maxKeyBytes {
+			return "", fmt.Errorf("input is longer than %d bytes; is this the right file?", maxKeyBytes)
 		}
 
 		raw = b

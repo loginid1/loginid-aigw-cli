@@ -33,8 +33,16 @@ func newMCPCommand() *cobra.Command {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 
+			target, err := apicmd.ResolveTarget()
+			if err != nil {
+				return err
+			}
+
+			target.Warn(cmd.ErrOrStderr())
+
 			srv := mcpserver.New(apicmd.Operations, mcpserver.Options{
-				BaseURL:       apicmd.BaseURL(),
+				BaseURL:       target.BaseURL,
+				UseSavedKey:   !target.Temporary,
 				ReadOnly:      readOnly,
 				ExposeSecrets: exposeSecrets,
 				Version:       version.Version,

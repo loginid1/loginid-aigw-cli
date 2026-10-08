@@ -91,3 +91,60 @@ func TestDoReturnsAPIError(t *testing.T) {
 		t.Errorf("error = %q\n want %q", err.Error(), want)
 	}
 }
+
+func TestDoDoesNotFollowRedirects(t *testing.T) {
+	t.Parallel()
+
+	var calls []string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		http.Redirect(w, r, "/elsewhere", http.StatusFound)
+	}))
+	t.Cleanup(srv.Close)
+
+	_, err := client.New(srv.URL, "k").Do(t.Context(), &client.Request{
+		Method: http.MethodPost, Path: "/projects", Body: map[string]any{"name": "x"},
+	})
+
+	var apiErr *client.APIError
+	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusFound || !strings.Contains(err.Error(), "unexpected redirect to /elsewhere") {
+		t.Fatalf("want a 302 *APIError naming the target, got %v", err)
+	}
+
+	// Following it would have turned the POST into a GET and sent the key on.
+	if len(calls) != 1 {
+		t.Errorf("requests sent: %v", calls)
+	}
+}
+
+func TestDoRejectsPathValuesThatMoveTheURL(t *testing.T) {
+	t.Parallel()
+
+	sent := false
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { sent = true }))
+	t.Cleanup(srv.Close)
+
+	for _, v := range []string{"", ".", "..", "a\nb", "a\x00"} {
+		_, err := client.New(srv.URL, "k").Do(t.Context(), &client.Request{
+			Method:     http.MethodDelete,
+			Path:       "/projects/{projectId}",
+			PathParams: map[string]string{"projectId": v},
+		})
+		if err == nil || !strings.Contains(err.Error(), "projectId") {
+			t.Errorf("projectId %q: want an error naming projectId, got %v", v, err)
+		}
+	}
+
+	// Escaped, not refused: a slash cannot add a segment.
+	_, err := client.New(srv.URL, "k").Do(t.Context(), &client.Request{
+		Method: http.MethodGet, Path: "/projects/{projectId}", PathParams: map[string]string{"projectId": "../x"},
+	})
+	if err != nil {
+		t.Errorf("../x should be escaped and sent: %v", err)
+	}
+
+	if !sent {
+		t.Error("the escaped request was not sent")
+	}
+}

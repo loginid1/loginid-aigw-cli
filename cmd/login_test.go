@@ -2,6 +2,7 @@ package cmd_test
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 
@@ -84,6 +85,16 @@ func TestLoginRejectsBadInput(t *testing.T) {
 	_, err := run(t, "two words", "login", "--with-key-stdin")
 	if err == nil {
 		t.Error("a key with a space was accepted")
+	}
+
+	// Refused, not cut to 4096 bytes and saved broken.
+	_, err = run(t, "aigw_sk_"+strings.Repeat("a", 5000), "login", "--with-key-stdin")
+	if err == nil || !strings.Contains(err.Error(), "longer than 4096 bytes") {
+		t.Errorf("an oversized key: %v", err)
+	}
+
+	if got, _ := credentials.Load(os.Getenv("XDG_CONFIG_HOME")+"/aigw", config.DefaultProfile); got != "" {
+		t.Errorf("an oversized key was saved: %d bytes", len(got))
 	}
 }
 
