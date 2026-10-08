@@ -109,6 +109,8 @@ type outOp struct {
 	Command                              []string
 	Args, Params                         []outParam
 	Fields                               []field
+	InputSchema                          string
+	ReturnsSecret                        bool
 	HasBody                              bool
 }
 
@@ -128,6 +130,11 @@ func generate(specPath, overlayPath, ref string) ([]byte, error) {
 
 	var ov overlay
 	if err := readYAML(overlayPath, &ov); err != nil {
+		return nil, err
+	}
+
+	raw, err := loadRawSpec(specPath)
+	if err != nil {
 		return nil, err
 	}
 
@@ -170,6 +177,14 @@ func generate(specPath, overlayPath, ref string) ([]byte, error) {
 			cmds[entry.Command] = o.OperationID
 
 			op, err := buildOp(&s, path, method, &o, entry.Command)
+			if err == nil {
+				op.InputSchema, err = raw.inputSchema(path, method)
+			}
+
+			if err == nil {
+				op.ReturnsSecret, err = raw.returnsSecret(path, method)
+			}
+
 			if err != nil {
 				errs = append(errs, fmt.Errorf("%s: %w", o.OperationID, err))
 

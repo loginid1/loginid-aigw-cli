@@ -28,7 +28,8 @@ var Operations = []Operation{
 			"name": "string",
 			"type": "string",
 		},
-		HasBody: true,
+		HasBody:     true,
+		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"name\":{\"description\":\"Display name of the new project.\",\"type\":\"string\"},\"type\":{\"description\":\"Fixed at creation; a project's credentials are type-specific and cannot be reinterpreted. Defaults to PROXY, currently the only supported type.\",\"enum\":[\"PROXY\"],\"type\":\"string\"}},\"required\":[\"name\"],\"type\":\"object\"}",
 	},
 	{
 		ID:      "projects#delete",
@@ -41,7 +42,8 @@ var Operations = []Operation{
 		Args: []Param{
 			{Name: "projectId", Flag: "", In: "path", Type: "string", Required: true, Desc: "The project to delete."},
 		},
-		HasBody: false,
+		HasBody:     false,
+		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"description\":\"The project to delete.\",\"type\":\"string\"}},\"required\":[\"projectId\"],\"type\":\"object\"}",
 	},
 	{
 		ID:      "projects#get",
@@ -54,17 +56,19 @@ var Operations = []Operation{
 		Args: []Param{
 			{Name: "projectId", Flag: "", In: "path", Type: "string", Required: true, Desc: "The project to fetch."},
 		},
-		HasBody: false,
+		HasBody:     false,
+		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"description\":\"The project to fetch.\",\"type\":\"string\"}},\"required\":[\"projectId\"],\"type\":\"object\"}",
 	},
 	{
-		ID:      "projects#list",
-		Command: []string{"projects", "list"},
-		Short:   "Returns all projects the current user can access",
-		Long:    "Returns all projects the current user can access.",
-		Method:  "GET",
-		Path:    "/projects",
-		Scope:   "project:read",
-		HasBody: false,
+		ID:          "projects#list",
+		Command:     []string{"projects", "list"},
+		Short:       "Returns all projects the current user can access",
+		Long:        "Returns all projects the current user can access.",
+		Method:      "GET",
+		Path:        "/projects",
+		Scope:       "project:read",
+		HasBody:     false,
+		InputSchema: "{\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}",
 	},
 	{
 		ID:      "projects#generateProxyClient",
@@ -77,7 +81,9 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: "Project the client belongs to. Must belong to the caller's account."},
 		},
-		HasBody: false,
+		HasBody:       false,
+		ReturnsSecret: true,
+		InputSchema:   "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"description\":\"Project the client belongs to. Must belong to the caller's account.\",\"type\":\"string\"}},\"required\":[\"projectId\"],\"type\":\"object\"}",
 	},
 	{
 		ID:      "projects#listProxyClients",
@@ -90,7 +96,8 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody: false,
+		HasBody:     false,
+		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"type\":\"string\"}},\"required\":[\"projectId\"],\"type\":\"object\"}",
 	},
 	{
 		ID:      "projects#revokeProxyClient",
@@ -106,7 +113,8 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: "Project the client belongs to. Must belong to the caller's account."},
 		},
-		HasBody: false,
+		HasBody:     false,
+		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"description\":\"Project the client belongs to. Must belong to the caller's account.\",\"type\":\"string\"},\"proxyClientId\":{\"description\":\"Id of the proxy client to revoke, from listProxyClients.\",\"type\":\"string\"}},\"required\":[\"projectId\",\"proxyClientId\"],\"type\":\"object\"}",
 	},
 	{
 		ID:      "projects#update",
@@ -125,7 +133,8 @@ var Operations = []Operation{
 		Fields: map[string]string{
 			"name": "string",
 		},
-		HasBody: true,
+		HasBody:     true,
+		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"name\":{\"description\":\"The project's new display name.\",\"type\":\"string\"},\"projectId\":{\"description\":\"The project to update.\",\"type\":\"string\"}},\"required\":[\"name\",\"projectId\"],\"type\":\"object\"}",
 	},
 	{
 		ID:      "resources#getAuthenticationSettings",
@@ -139,7 +148,8 @@ var Operations = []Operation{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 			{Name: "resourceId", Flag: "resource-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody: false,
+		HasBody:     false,
+		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"}},\"required\":[\"projectId\",\"resourceId\"],\"type\":\"object\"}",
 	},
 	{
 		ID:      "resources#setAuthenticationSettings",
@@ -189,7 +199,8 @@ var Operations = []Operation{
 			"options.showScopeDescriptions":      "boolean",
 			"options.showVerifiedAgent":          "boolean",
 		},
-		HasBody: true,
+		HasBody:     true,
+		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"appearance\":{\"properties\":{\"accentColor\":{\"description\":\"Hex, e.g. \\\"#1E2898\\\".\",\"type\":\"string\"},\"borderRadius\":{\"enum\":[\"\",\"NONE\",\"MEDIUM\",\"FULL\"],\"type\":\"string\"},\"colorScheme\":{\"enum\":[\"\",\"LIGHT\",\"DARK\"],\"type\":\"string\"},\"logoUrl\":{\"description\":\"Absolute https URL. Shown on both screens.\",\"type\":\"string\"},\"primaryActionColor\":{\"type\":\"string\"},\"secondaryActionColor\":{\"type\":\"string\"}},\"type\":\"object\"},\"content\":{\"properties\":{\"consent\":{\"properties\":{\"approveActionLabel\":{\"type\":\"string\"},\"denyActionLabel\":{\"type\":\"string\"},\"footerText\":{\"type\":\"string\"},\"heading\":{\"type\":\"string\"}},\"required\":[\"heading\",\"approveActionLabel\",\"denyActionLabel\"],\"type\":\"object\"},\"signIn\":{\"properties\":{\"footerText\":{\"type\":\"string\"},\"heading\":{\"type\":\"string\"},\"primaryActionLabel\":{\"type\":\"string\"},\"subheading\":{\"type\":\"string\"}},\"required\":[\"heading\"],\"type\":\"object\"}},\"type\":\"object\"},\"options\":{\"properties\":{\"allowOneTimeCodeFallback\":{\"type\":\"boolean\"},\"showScopeDescriptions\":{\"type\":\"boolean\"},\"showVerifiedAgent\":{\"type\":\"boolean\"}},\"required\":[\"allowOneTimeCodeFallback\",\"showScopeDescriptions\",\"showVerifiedAgent\"],\"type\":\"object\"},\"projectId\":{\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"}},\"required\":[\"projectId\",\"resourceId\"],\"type\":\"object\"}",
 	},
 	{
 		ID:      "resources#create",
@@ -241,7 +252,9 @@ var Operations = []Operation{
 			"scopes[].displayName":                "string",
 			"scopes[].value":                      "string",
 		},
-		HasBody: true,
+		HasBody:       true,
+		ReturnsSecret: true,
+		InputSchema:   "{\"additionalProperties\":false,\"properties\":{\"exchange\":{\"properties\":{\"actorClientId\":{\"description\":\"A service account at the merchant we authenticate as when exchanging. TOKEN_EXCHANGE only.\",\"type\":\"string\"},\"actorClientSecret\":{\"description\":\"Required with actorClientId. Never returned once stored; omit on update to keep it.\",\"type\":\"string\"},\"audience\":{\"description\":\"An alternative to the indicator, for a server that identifies APIs by name. TOKEN_EXCHANGE only.\",\"type\":\"string\"},\"authMethod\":{\"enum\":[\"PRIVATE_KEY_JWT\",\"CLIENT_SECRET_BASIC\",\"TOKEN_EXCHANGE\"],\"type\":\"string\"},\"clientId\":{\"type\":\"string\"},\"clientSecret\":{\"description\":\"Required for CLIENT_SECRET_BASIC, rejected otherwise. Never returned once stored.\",\"type\":\"string\"},\"indicator\":{\"description\":\"Unique across the platform: it is what resolves the tenant.\",\"type\":\"string\"},\"issuer\":{\"type\":\"string\"},\"sendResourceParam\":{\"description\":\"Defaults to true. Only a token exchange carries it.\",\"type\":\"boolean\"},\"subjectTokenType\":{\"description\":\"Leave empty unless the server defines one of its own. TOKEN_EXCHANGE only.\",\"type\":\"string\"},\"tokenEndpoint\":{\"type\":\"string\"}},\"required\":[\"indicator\",\"issuer\",\"tokenEndpoint\",\"clientId\",\"authMethod\"],\"type\":\"object\"},\"idps\":{\"description\":\"IdP names to select for this resource, e.g. \\\"google\\\".\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"kind\":{\"default\":\"EXCHANGE\",\"description\":\"Identifies the resource direction.\",\"enum\":[\"EXCHANGE\",\"OAUTH_CLIENT\"],\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"oauthClient\":{\"properties\":{\"redirectUris\":{\"description\":\"Absolute https URLs.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"scopes\":{\"description\":\"From openid, profile, email, phone and offline_access; openid is always included.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"tokenEndpointAuthMethod\":{\"description\":\"Defaults to CLIENT_SECRET_BASIC on create. A client does not change it; omit on update.\",\"enum\":[\"CLIENT_SECRET_BASIC\",\"CLIENT_SECRET_POST\",\"NONE\"],\"type\":\"string\"}},\"required\":[\"redirectUris\"],\"type\":\"object\"},\"projectId\":{\"type\":\"string\"},\"scopes\":{\"description\":\"EXCHANGE only: the scopes the resource exposes.\",\"items\":{\"properties\":{\"description\":{\"type\":\"string\"},\"displayName\":{\"type\":\"string\"},\"value\":{\"type\":\"string\"}},\"required\":[\"value\",\"displayName\",\"description\"],\"type\":\"object\"},\"type\":\"array\"}},\"required\":[\"name\",\"projectId\"],\"type\":\"object\"}",
 	},
 	{
 		ID:      "resources#delete",
@@ -257,7 +270,8 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody: false,
+		HasBody:     false,
+		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"}},\"required\":[\"projectId\",\"resourceId\"],\"type\":\"object\"}",
 	},
 	{
 		ID:      "resources#get",
@@ -273,7 +287,8 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody: false,
+		HasBody:     false,
+		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"}},\"required\":[\"projectId\",\"resourceId\"],\"type\":\"object\"}",
 	},
 	{
 		ID:      "resources#list",
@@ -286,7 +301,8 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody: false,
+		HasBody:     false,
+		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"type\":\"string\"}},\"required\":[\"projectId\"],\"type\":\"object\"}",
 	},
 	{
 		ID:      "resources#update",
@@ -341,7 +357,8 @@ var Operations = []Operation{
 			"scopes[].displayName":                "string",
 			"scopes[].value":                      "string",
 		},
-		HasBody: true,
+		HasBody:     true,
+		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"exchange\":{\"properties\":{\"actorClientId\":{\"description\":\"A service account at the merchant we authenticate as when exchanging. TOKEN_EXCHANGE only.\",\"type\":\"string\"},\"actorClientSecret\":{\"description\":\"Required with actorClientId. Never returned once stored; omit on update to keep it.\",\"type\":\"string\"},\"audience\":{\"description\":\"An alternative to the indicator, for a server that identifies APIs by name. TOKEN_EXCHANGE only.\",\"type\":\"string\"},\"authMethod\":{\"enum\":[\"PRIVATE_KEY_JWT\",\"CLIENT_SECRET_BASIC\",\"TOKEN_EXCHANGE\"],\"type\":\"string\"},\"clientId\":{\"type\":\"string\"},\"clientSecret\":{\"description\":\"Required for CLIENT_SECRET_BASIC, rejected otherwise. Never returned once stored.\",\"type\":\"string\"},\"indicator\":{\"description\":\"Unique across the platform: it is what resolves the tenant.\",\"type\":\"string\"},\"issuer\":{\"type\":\"string\"},\"sendResourceParam\":{\"description\":\"Defaults to true. Only a token exchange carries it.\",\"type\":\"boolean\"},\"subjectTokenType\":{\"description\":\"Leave empty unless the server defines one of its own. TOKEN_EXCHANGE only.\",\"type\":\"string\"},\"tokenEndpoint\":{\"type\":\"string\"}},\"required\":[\"indicator\",\"issuer\",\"tokenEndpoint\",\"clientId\",\"authMethod\"],\"type\":\"object\"},\"idps\":{\"description\":\"IdP names to select for this resource, e.g. \\\"google\\\".\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"kind\":{\"description\":\"Identifies the resource direction. It is used only to validate that the existing kind is unchanged.\",\"enum\":[\"EXCHANGE\",\"OAUTH_CLIENT\"],\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"oauthClient\":{\"properties\":{\"redirectUris\":{\"description\":\"Absolute https URLs.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"scopes\":{\"description\":\"From openid, profile, email, phone and offline_access; openid is always included.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"tokenEndpointAuthMethod\":{\"description\":\"Defaults to CLIENT_SECRET_BASIC on create. A client does not change it; omit on update.\",\"enum\":[\"CLIENT_SECRET_BASIC\",\"CLIENT_SECRET_POST\",\"NONE\"],\"type\":\"string\"}},\"required\":[\"redirectUris\"],\"type\":\"object\"},\"projectId\":{\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"},\"scopes\":{\"description\":\"EXCHANGE only: the scopes the resource exposes.\",\"items\":{\"properties\":{\"description\":{\"type\":\"string\"},\"displayName\":{\"type\":\"string\"},\"value\":{\"type\":\"string\"}},\"required\":[\"value\",\"displayName\",\"description\"],\"type\":\"object\"},\"type\":\"array\"}},\"required\":[\"idps\",\"kind\",\"name\",\"projectId\",\"resourceId\",\"scopes\"],\"type\":\"object\"}",
 	},
 	{
 		ID:      "resources#listScopes",
@@ -355,7 +372,8 @@ var Operations = []Operation{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 			{Name: "resourceId", Flag: "resource-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody: false,
+		HasBody:     false,
+		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"}},\"required\":[\"projectId\",\"resourceId\"],\"type\":\"object\"}",
 	},
 	{
 		ID:      "resources#generateSigningKey",
@@ -369,7 +387,8 @@ var Operations = []Operation{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 			{Name: "resourceId", Flag: "resource-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody: false,
+		HasBody:     false,
+		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"}},\"required\":[\"projectId\",\"resourceId\"],\"type\":\"object\"}",
 	},
 	{
 		ID:      "resources#listSigningKeys",
@@ -383,7 +402,8 @@ var Operations = []Operation{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 			{Name: "resourceId", Flag: "resource-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody: false,
+		HasBody:     false,
+		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"}},\"required\":[\"projectId\",\"resourceId\"],\"type\":\"object\"}",
 	},
 	{
 		ID:      "resources#patch",
@@ -438,6 +458,7 @@ var Operations = []Operation{
 			"scopes[].displayName":                "string",
 			"scopes[].value":                      "string",
 		},
-		HasBody: true,
+		HasBody:     true,
+		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"exchange\":{\"properties\":{\"actorClientId\":{\"description\":\"A service account at the merchant we authenticate as when exchanging. TOKEN_EXCHANGE only.\",\"type\":\"string\"},\"actorClientSecret\":{\"description\":\"Required with actorClientId. Never returned once stored; omit on update to keep it.\",\"type\":\"string\"},\"audience\":{\"description\":\"An alternative to the indicator, for a server that identifies APIs by name. TOKEN_EXCHANGE only.\",\"type\":\"string\"},\"authMethod\":{\"enum\":[\"PRIVATE_KEY_JWT\",\"CLIENT_SECRET_BASIC\",\"TOKEN_EXCHANGE\"],\"type\":\"string\"},\"clientId\":{\"type\":\"string\"},\"clientSecret\":{\"description\":\"Required for CLIENT_SECRET_BASIC, rejected otherwise. Never returned once stored.\",\"type\":\"string\"},\"indicator\":{\"description\":\"Unique across the platform: it is what resolves the tenant.\",\"type\":\"string\"},\"issuer\":{\"type\":\"string\"},\"sendResourceParam\":{\"description\":\"Defaults to true. Only a token exchange carries it.\",\"type\":\"boolean\"},\"subjectTokenType\":{\"description\":\"Leave empty unless the server defines one of its own. TOKEN_EXCHANGE only.\",\"type\":\"string\"},\"tokenEndpoint\":{\"type\":\"string\"}},\"required\":[\"indicator\",\"issuer\",\"tokenEndpoint\",\"clientId\",\"authMethod\"],\"type\":\"object\"},\"idps\":{\"description\":\"IdP names to select for this resource, e.g. \\\"google\\\".\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"kind\":{\"description\":\"Identifies the resource direction. It is used only to validate that the existing kind is unchanged.\",\"enum\":[\"EXCHANGE\",\"OAUTH_CLIENT\"],\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"oauthClient\":{\"properties\":{\"redirectUris\":{\"description\":\"Absolute https URLs.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"scopes\":{\"description\":\"From openid, profile, email, phone and offline_access; openid is always included.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"tokenEndpointAuthMethod\":{\"description\":\"Defaults to CLIENT_SECRET_BASIC on create. A client does not change it; omit on update.\",\"enum\":[\"CLIENT_SECRET_BASIC\",\"CLIENT_SECRET_POST\",\"NONE\"],\"type\":\"string\"}},\"required\":[\"redirectUris\"],\"type\":\"object\"},\"projectId\":{\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"},\"scopes\":{\"description\":\"EXCHANGE only: the scopes the resource exposes.\",\"items\":{\"properties\":{\"description\":{\"type\":\"string\"},\"displayName\":{\"type\":\"string\"},\"value\":{\"type\":\"string\"}},\"required\":[\"value\",\"displayName\",\"description\"],\"type\":\"object\"},\"type\":\"array\"}},\"required\":[\"projectId\",\"resourceId\"],\"type\":\"object\"}",
 	},
 }

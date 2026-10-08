@@ -12,6 +12,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 
@@ -32,25 +33,32 @@ const (
 
 // AddAll registers every generated operation under root, building the noun
 // commands the operations' paths name along the way.
-//
-// Requests go to DefaultAPIBase, the spec's server. The base is not a flag: a
-// key sent to a URL the user typed would leak.
+func AddAll(root *cobra.Command) {
+	addAll(root, BaseURL())
+}
+
+// BaseURL is where API requests go: DefaultAPIBase, the spec's server. It is
+// not a flag: a key sent to a URL the user typed would leak.
 //
 // TEMP: envTempAPIBase overrides it, for testing against local and staging
 // servers until there is a proper answer for those. It is left out of all help
 // text on purpose, and every run that uses it says so on stderr. Remove it
 // once that answer exists.
-func AddAll(root *cobra.Command) {
-	base := DefaultAPIBase
-
-	if override := os.Getenv(envTempAPIBase); override != "" {
-		fmt.Fprintf(os.Stderr, "warning: %s is set; API requests go to %s\n", envTempAPIBase, override)
-
-		base = override
+func BaseURL() string {
+	override := os.Getenv(envTempAPIBase)
+	if override == "" {
+		return DefaultAPIBase
 	}
 
-	addAll(root, base)
+	warnTempBase.Do(func() {
+		fmt.Fprintf(os.Stderr, "warning: %s is set; API requests go to %s\n", envTempAPIBase, override)
+	})
+
+	return override
 }
+
+// warnTempBase prints the BaseURL warning once per run, however often it is asked.
+var warnTempBase sync.Once
 
 func addAll(root *cobra.Command, base string) {
 	for i := range Operations {

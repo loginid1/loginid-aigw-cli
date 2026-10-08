@@ -27,7 +27,7 @@ func NewRootCommand() *cobra.Command {
 		SilenceErrors: true,
 	}
 
-	root.AddCommand(newVersionCommand(), newLoginCommand(), newLogoutCommand())
+	root.AddCommand(newVersionCommand(), newLoginCommand(), newLogoutCommand(), newMCPCommand())
 	apicmd.AddAll(root)
 
 	return root

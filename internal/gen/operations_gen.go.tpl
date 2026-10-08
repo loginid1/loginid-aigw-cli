@@ -47,6 +47,10 @@ var Operations = []Operation{
 		},
 		{{- end }}
 		HasBody: {{ .HasBody }},
+		{{- if .ReturnsSecret }}
+		ReturnsSecret: true,
+		{{- end }}
+		InputSchema: {{ q .InputSchema }},
 	},
 {{- end }}
 }
