@@ -34,6 +34,9 @@ var reserved = []string{"api-key", "data", "output", "confirm", "help"}
 
 var methods = []string{"get", "post", "put", "patch", "delete"}
 
+// maxNesting bounds how deep body schemas may nest.
+const maxNesting = 10
+
 func main() {
 	specPath := flag.String("spec", "", "path to the OpenAPI 3 spec (yaml)")
 	overlayPath := flag.String("overlay", "api/devcon-overlay.yaml", "path to the overlay")
@@ -99,6 +102,9 @@ type schema struct {
 type overlay struct {
 	Operations map[string]struct {
 		Command string
+		// ReturnsSecret overrides secret detection, for a response whose
+		// field names do not give the secret away, or a false positive.
+		ReturnsSecret *bool `yaml:"returns_secret"`
 	}
 }
 
@@ -183,6 +189,10 @@ func generate(specPath, overlayPath, ref string) ([]byte, error) {
 
 			if err == nil {
 				op.ReturnsSecret, err = raw.returnsSecret(path, method)
+			}
+
+			if entry.ReturnsSecret != nil {
+				op.ReturnsSecret = *entry.ReturnsSecret
 			}
 
 			if err != nil {
@@ -320,6 +330,12 @@ func buildOp(s *spec, path, method string, o *operation, command string) (outOp,
 // named by their dotted path. Every settable path, including the ones inside
 // lists of objects that no flag can express, is recorded in fields for -d.
 func walkBody(s *spec, obj *schema, apiPrefix, flagPrefix string, required []string, fields *[]field, addFlag func(outParam) error) error {
+	// resolve only bounds $ref-to-$ref chains; a schema whose property points
+	// back at itself would otherwise recurse for ever.
+	if strings.Count(apiPrefix, ".") > maxNesting {
+		return fmt.Errorf("%s: nested more than %d levels; is the schema recursive?", apiPrefix, maxNesting)
+	}
+
 	for _, name := range sortedKeys(obj.Properties) {
 		prop, err := resolve(s, obj.Properties[name])
 		if err != nil {
@@ -374,6 +390,10 @@ func walkBody(s *spec, obj *schema, apiPrefix, flagPrefix string, required []str
 
 // walkFields records the -d paths inside a list element, without flags.
 func walkFields(s *spec, obj *schema, prefix string, fields *[]field) error {
+	if strings.Count(prefix, ".")+strings.Count(prefix, "[]") > maxNesting {
+		return fmt.Errorf("%s: nested more than %d levels; is the schema recursive?", prefix, maxNesting)
+	}
+
 	for _, name := range sortedKeys(obj.Properties) {
 		prop, err := resolve(s, obj.Properties[name])
 		if err != nil {

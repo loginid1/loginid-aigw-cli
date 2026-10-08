@@ -6,6 +6,11 @@
 #
 # Scopes are not set here: they come from each operation's x-required-scope.
 #
+# returns_secret: true|false overrides the generator's detection of responses
+# that carry a one-time secret (fields named *secret, *token, *password,
+# *privateKey, *apiKey, *credential). `aigw mcp` hides those tools unless
+# --expose-secrets is set.
+#
 # Naming: PATCH is `update`, because a partial change is what people usually
 # want. PUT, a full replace, is `replace`.
 operations:

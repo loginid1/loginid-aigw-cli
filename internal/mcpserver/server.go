@@ -32,9 +32,9 @@ type Options struct {
 	// it; `aigw mcp` leaves it empty so a later `aigw login` takes effect
 	// without a restart.
 	APIKey string
-	// UseSavedKey lets calls fall back to the key `aigw login` saved. It is
-	// off when the base URL is a temporary override (see apicmd.Target).
-	UseSavedKey bool
+	// TemporaryBase is set when BaseURL is a temporary override (see
+	// apicmd.Target). The key then comes only from AIGW_TEMP_API_KEY.
+	TemporaryBase bool
 	// ReadOnly registers only the tools that make GET requests.
 	ReadOnly bool
 	// ExposeSecrets registers the tools whose response carries a one-time
@@ -160,13 +160,13 @@ func handler(op *apicmd.Operation, schema *jsonschema.Resolved, opts Options) mc
 
 		key := opts.APIKey
 		if key == "" {
-			key, err = client.ResolveAPIKey("", opts.UseSavedKey)
+			key, err = client.ResolveAPIKey("", opts.TemporaryBase)
 		}
 
 		if errors.Is(err, client.ErrNotLoggedIn) {
-			if !opts.UseSavedKey {
-				return toolError("No API key: set " + client.EnvAPIKey + " in this MCP server's environment. " +
-					"The saved login is not used while the base URL is overridden."), nil
+			if opts.TemporaryBase {
+				return toolError("No API key: set " + client.EnvTempAPIKey + " in this MCP server's environment. " +
+					"While the base URL is overridden, " + client.EnvAPIKey + " and the saved login are not used."), nil
 			}
 
 			return toolError("aigw is not logged in. Run `aigw login` in a terminal, or set " +

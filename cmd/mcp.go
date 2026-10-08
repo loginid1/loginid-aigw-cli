@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"os"
 	"os/signal"
 	"syscall"
@@ -42,14 +44,22 @@ func newMCPCommand() *cobra.Command {
 
 			srv := mcpserver.New(apicmd.Operations, mcpserver.Options{
 				BaseURL:       target.BaseURL,
-				UseSavedKey:   !target.Temporary,
+				TemporaryBase: target.Temporary,
 				ReadOnly:      readOnly,
 				ExposeSecrets: exposeSecrets,
 				Version:       version.Version,
 			})
 
 			// stdout carries the protocol; anything else must go to stderr.
-			return srv.Run(ctx, &mcp.StdioTransport{})
+			err = srv.Run(ctx, &mcp.StdioTransport{})
+
+			// MCP clients stop a server with SIGINT or SIGTERM. That is a
+			// normal shutdown, not "Error: context canceled" and exit 1.
+			if errors.Is(err, context.Canceled) && ctx.Err() != nil {
+				return nil
+			}
+
+			return err
 		},
 	}
 

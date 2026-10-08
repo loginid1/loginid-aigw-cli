@@ -33,7 +33,7 @@ func serve(t *testing.T, status int, reply string) (*httptest.Server, *captured)
 
 	got := &captured{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got.method, got.path, got.auth = r.Method, r.URL.Path, r.Header.Get("Authorization")
+		got.method, got.path, got.auth = r.Method, r.URL.EscapedPath(), r.Header.Get("Authorization")
 
 		raw, _ := io.ReadAll(r.Body)
 		if len(raw) > 0 && json.Unmarshal(raw, &got.body) != nil {
@@ -124,7 +124,7 @@ func TestPositionalIDIsTheLastPathSegment(t *testing.T) {
 	}
 
 	// The slash is escaped, so an id cannot walk into another path.
-	if got.path != "/projects/proj-9/resources/res/7" && got.path != "/projects/proj-9/resources/res%2F7" {
+	if got.path != "/projects/proj-9/resources/res%2F7" {
 		t.Errorf("path = %q", got.path)
 	}
 
@@ -224,8 +224,14 @@ func TestDataRejectsBadInput(t *testing.T) {
 		}
 	}
 
+	// A flag with a value outside its enum.
+	_, err := runAigw(t, srv.URL, "resources", "create", "--project-id", "p", "--kind", "BAD", apiKey, "k")
+	if err == nil || !strings.Contains(err.Error(), "not one of") {
+		t.Errorf("--kind BAD: %v", err)
+	}
+
 	if got.method != "" {
-		t.Error("a request was sent for invalid -d input")
+		t.Error("a request was sent for invalid input")
 	}
 }
 

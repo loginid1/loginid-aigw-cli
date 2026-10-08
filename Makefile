@@ -54,11 +54,16 @@ test: test_unit
 test_unit:
 	CGO_ENABLED=0 \
 	go test -count=1 $(pkg_list)
+	# The generator sits behind a build tag, so ./... alone never builds it.
+	CGO_ENABLED=0 \
+	go test -count=1 -tags gen_commands ./internal/gen/
 
 # CI reads the total from the last line of `go tool cover -func`.
 test_coverage:
 	CGO_ENABLED=0 \
 	go test -count=1 -coverprofile=coverage.txt $(pkg_list)
+	CGO_ENABLED=0 \
+	go test -count=1 -tags gen_commands ./internal/gen/
 	go tool cover -func=coverage.txt | tail -1
 
 # Locally this uses your glab login. In CI it fetches the one commit over git

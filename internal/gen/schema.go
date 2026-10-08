@@ -81,6 +81,15 @@ func (r rawSpec) inline(node any, depth int) (any, error) {
 			return r.inline(target, depth+1)
 		}
 
+		// Composition is refused, not dropped: dropping it would leave an
+		// empty schema, so secret detection would see nothing and the MCP
+		// input check would reject every field.
+		for _, k := range []string{"allOf", "oneOf", "anyOf", "not"} {
+			if _, ok := n[k]; ok {
+				return nil, fmt.Errorf("schema keyword %q is not supported; extend internal/gen before using it", k)
+			}
+		}
+
 		out := map[string]any{}
 
 		for _, k := range schemaKeys {
@@ -113,6 +122,15 @@ func (r rawSpec) inline(node any, depth int) (any, error) {
 			}
 
 			out[k] = iv
+		}
+
+		// Closed objects all the way down, not just at the top: otherwise a
+		// typo inside a nested object ("exchange", "scopes[]") would pass
+		// the MCP tool's input check and be sent.
+		if _, hasProps := out["properties"]; hasProps {
+			if _, set := out["additionalProperties"]; !set {
+				out["additionalProperties"] = false
+			}
 		}
 
 		return out, nil
@@ -255,6 +273,10 @@ func (r rawSpec) returnsSecret(path, method string) (bool, error) {
 	return false, nil
 }
 
+// secretSuffixes end the names of fields that hold credentials. Suffixes,
+// not substrings: "tokenEndpoint" and "subjectTokenType" are not secrets.
+var secretSuffixes = []string{"secret", "secrets", "token", "tokens", "password", "privatekey", "apikey", "credential", "credentials"}
+
 func hasSecretField(node any) bool {
 	m, ok := node.(map[string]any)
 	if !ok {
@@ -263,9 +285,8 @@ func hasSecretField(node any) bool {
 
 	props, _ := m["properties"].(map[string]any)
 	for name, p := range props {
-		// A string, so flags such as hasClientSecret (a boolean) do not count.
 		pm, _ := p.(map[string]any)
-		if pm["type"] == "string" && strings.HasSuffix(strings.ToLower(name), "secret") {
+		if (isSecretName(name) && holdsText(p)) || pm["format"] == "password" {
 			return true
 		}
 
@@ -274,7 +295,45 @@ func hasSecretField(node any) bool {
 		}
 	}
 
-	return hasSecretField(m["items"])
+	return hasSecretField(m["items"]) || hasSecretField(m["additionalProperties"])
+}
+
+func isSecretName(name string) bool {
+	n := strings.NewReplacer("_", "", "-", "").Replace(strings.ToLower(name))
+	for _, suffix := range secretSuffixes {
+		if strings.HasSuffix(n, suffix) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// holdsText reports whether a field can carry a secret value: a string, a
+// list of them, or anything marked format: password. Not a boolean such as
+// hasClientSecret.
+func holdsText(node any) bool {
+	m, _ := node.(map[string]any)
+	if m["format"] == "password" {
+		return true
+	}
+
+	switch t := m["type"].(type) {
+	case string:
+		if t == "array" {
+			return holdsText(m["items"])
+		}
+
+		return t == "string"
+	case []any:
+		for _, v := range t {
+			if v == "string" {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func anyStrings(v any) []string {

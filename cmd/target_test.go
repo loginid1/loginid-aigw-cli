@@ -21,12 +21,18 @@ func TestResolveTarget(t *testing.T) {
 	}{
 		{"", true, false},
 		{"https://staging.example", true, true},
+		{"https://staging.example/api", true, true},
 		{"http://localhost:8085", true, true},
 		{"http://127.0.0.1:8085", true, true},
 		{"http://[::1]:8085", true, true},
 		{"http://evil.example", false, false},             // plain http off-host
+		{"http://dev.localhost:8085", false, false},       // resolved through DNS
+		{"http://evillocalhost:80", false, false},         // not localhost at all
 		{"https://user:pw@staging.example", false, false}, // userinfo
-		{"staging.example", false, false},                 // no scheme
+		{"https://staging.example/x?y=1", false, false},   // the API path would land in the query
+		{"https://staging.example/x#z", false, false},     // or in the fragment
+		{"https://staging.example/x?", false, false},
+		{"staging.example", false, false}, // no scheme
 	}
 
 	for _, tc := range cases {
@@ -43,10 +49,14 @@ func TestResolveTarget(t *testing.T) {
 	}
 }
 
-func TestTemporaryBaseNeverGetsTheSavedKey(t *testing.T) {
+// A temporary base gets a key only from --api-key or AIGW_TEMP_API_KEY: never
+// the saved login, and never AIGW_API_KEY, which a cloned repo's .mcp.json
+// could pair with its own AIGW_TEMP_API_BASE.
+func TestTemporaryBaseGetsOnlyItsOwnKey(t *testing.T) {
 	keyring.MockInit()
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("AIGW_API_KEY", "")
+	t.Setenv("AIGW_TEMP_API_KEY", "")
 
 	_, err := run(t, "aigw_sk_saved", "login", "--with-key-stdin")
 	if err != nil {
@@ -62,31 +72,36 @@ func TestTemporaryBaseNeverGetsTheSavedKey(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	t.Setenv("AIGW_TEMP_API_BASE", srv.URL)
+	t.Setenv("AIGW_API_KEY", "aigw_sk_from_shell")
 
-	// The warning prints once per process, so this first run carries it.
 	out, err := run(t, "", "projects", "list")
 	if !strings.Contains(out, "warning: AIGW_TEMP_API_BASE is set") {
 		t.Errorf("no warning in %q", out)
 	}
 
-	if cmd.ExitCode(err) != apicmd.ExitNotAuthenticated || !strings.Contains(err.Error(), "saved login is not used") {
-		t.Fatalf("want exit 3 refusing the saved key, got %d: %v", cmd.ExitCode(err), err)
+	if cmd.ExitCode(err) != apicmd.ExitNotAuthenticated || !strings.Contains(err.Error(), "AIGW_TEMP_API_KEY") {
+		t.Fatalf("want exit 3 asking for AIGW_TEMP_API_KEY, got %d: %v", cmd.ExitCode(err), err)
 	}
 
 	if len(auths) != 0 {
-		t.Fatalf("a request was sent: %v", auths)
+		t.Fatalf("a request was sent with %v", auths)
 	}
 
-	// An explicitly given key is used.
-	t.Setenv("AIGW_API_KEY", "aigw_sk_explicit")
+	t.Setenv("AIGW_TEMP_API_KEY", "aigw_sk_temp")
 
 	_, err = run(t, "", "projects", "list")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if len(auths) != 1 || auths[0] != "Bearer aigw_sk_explicit" {
-		t.Errorf("sent %v", auths)
+	_, err = run(t, "", "projects", "list", "--api-key", "aigw_sk_typed")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []string{"Bearer aigw_sk_temp", "Bearer aigw_sk_typed"}
+	if strings.Join(auths, ",") != strings.Join(want, ",") {
+		t.Errorf("sent %v, want %v", auths, want)
 	}
 }
 
@@ -100,5 +115,15 @@ func TestHelpDoesNotTouchTheTarget(t *testing.T) {
 
 	if strings.Contains(out, "AIGW_TEMP_API_BASE") {
 		t.Errorf("help mentions the override: %q", out)
+	}
+}
+
+func TestMCPRefusesABadTemporaryBase(t *testing.T) {
+	t.Setenv("AIGW_TEMP_API_BASE", "http://evil.example")
+
+	// It must fail before it starts serving on stdin.
+	_, err := run(t, "", "mcp")
+	if err == nil || !strings.Contains(err.Error(), "must be https") {
+		t.Fatalf("aigw mcp with a bad base: %v", err)
 	}
 }

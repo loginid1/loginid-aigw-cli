@@ -38,8 +38,14 @@ func connect(t *testing.T, opts mcpserver.Options, status int, reply string) (*m
 	t.Cleanup(api.Close)
 
 	opts.BaseURL = api.URL
-	if opts.APIKey == "" {
+
+	// Most tests pin a key. "-" leaves it empty, so the handler resolves one
+	// the way `aigw mcp` does.
+	switch opts.APIKey {
+	case "":
 		opts.APIKey = "aigw_sk_test"
+	case "-":
+		opts.APIKey = ""
 	}
 
 	serverT, clientT := mcp.NewInMemoryTransports()
@@ -110,10 +116,51 @@ func TestToolSets(t *testing.T) {
 	}
 
 	ro, _ := connect(t, mcpserver.Options{ReadOnly: true}, http.StatusOK, `{}`)
-	for _, name := range toolNames(t, ro) {
-		if strings.HasSuffix(name, "_create") || strings.HasSuffix(name, "_delete") || strings.HasSuffix(name, "_update") {
-			t.Errorf("read-only server offers %s", name)
+
+	res, err := ro.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gets := 0
+
+	for _, op := range apicmd.Operations {
+		if op.Method == http.MethodGet {
+			gets++
 		}
+	}
+
+	if len(res.Tools) != gets {
+		t.Errorf("read-only server offers %d tools, want the %d GET operations", len(res.Tools), gets)
+	}
+
+	for _, tool := range res.Tools {
+		if !tool.Annotations.ReadOnlyHint {
+			t.Errorf("read-only server offers %s, which writes", tool.Name)
+		}
+	}
+}
+
+// Not parallel: it sets env vars. With a temporary base URL the key may come
+// only from AIGW_TEMP_API_KEY, never from AIGW_API_KEY or the saved login.
+func TestTemporaryBaseIgnoresOtherKeys(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("AIGW_API_KEY", "aigw_sk_from_shell")
+	t.Setenv("AIGW_TEMP_API_KEY", "")
+
+	s, got := connect(t, mcpserver.Options{TemporaryBase: true, APIKey: "-"}, http.StatusOK, `[]`)
+
+	res, err := s.CallTool(t.Context(), &mcp.CallToolParams{Name: "projects_list", Arguments: map[string]any{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !res.IsError || !strings.Contains(text(res), "AIGW_TEMP_API_KEY") {
+		t.Errorf("IsError=%v text=%q, want a tool error asking for AIGW_TEMP_API_KEY", res.IsError, text(res))
+	}
+
+	if got.method != "" {
+		t.Errorf("a request was sent with %q", got.auth)
 	}
 }
 
@@ -208,16 +255,16 @@ func TestErrorsReachTheModel(t *testing.T) {
 		{"bad enum", ok, "resources_update", map[string]any{"projectId": "p", "resourceId": "r", "kind": "BAD"}, "enum"},
 		{"wrong type", ok, "projects_get", map[string]any{"projectId": 5}, "type"},
 		{"path value that moves the URL", ok, "projects_get", map[string]any{"projectId": ".."}, `".." is not a valid ID`},
+		{"typo one level down", ok, "resources_auth_settings_update", map[string]any{
+			"projectId": "p", "resourceId": "r",
+			"options": map[string]any{"allowOneTimeCodeFallback": true, "showScopeDescriptions": true, "showVerifiedAgent": true, "shwoLogo": true},
+		}, `additional properties ["shwoLogo"]`},
 	}
 
 	for _, tc := range cases {
 		res, err := tc.s.CallTool(t.Context(), &mcp.CallToolParams{Name: tc.tool, Arguments: tc.args})
 		if err != nil {
-			// Bad arguments may be refused by schema validation before the
-			// handler runs; that also reaches the model.
-			if !strings.Contains(err.Error(), "projectId") && !strings.Contains(err.Error(), "bogus") {
-				t.Errorf("%s: protocol error %v", tc.name, err)
-			}
+			t.Errorf("%s: protocol error %v; want a tool error the model can read", tc.name, err)
 
 			continue
 		}

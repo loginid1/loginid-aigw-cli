@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -24,8 +25,13 @@ import (
 	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/credentials"
 )
 
-// EnvAPIKey names the env var that supplies a key without `aigw login`.
-const EnvAPIKey = "AIGW_API_KEY" //nolint:gosec // the name of an env var, not a credential
+// Env vars that supply a key without `aigw login`.
+const (
+	// EnvAPIKey is used for the real API.
+	EnvAPIKey = "AIGW_API_KEY" //nolint:gosec // the name of an env var, not a credential
+	// EnvTempAPIKey is the only env var used when the base URL is overridden.
+	EnvTempAPIKey = "AIGW_TEMP_API_KEY" //nolint:gosec // the name of an env var, not a credential
+)
 
 const requestTimeout = 30 * time.Second
 
@@ -41,11 +47,17 @@ type Client struct {
 
 // New returns a client for base, authenticating with apiKey.
 func New(base, apiKey string) *Client {
+	var transport http.RoundTripper
+	if strings.HasPrefix(base, "http://") {
+		transport = loopbackOnlyTransport()
+	}
+
 	return &Client{
 		BaseURL: strings.TrimSuffix(base, "/"),
 		APIKey:  apiKey,
 		HTTP: &http.Client{
-			Timeout: requestTimeout,
+			Transport: transport,
+			Timeout:   requestTimeout,
 			// Never follow a redirect. Go would turn a POST into a GET on a
 			// 302 and report the GET's answer as success, and it would send
 			// the key along, even from https to http. The API does not
@@ -55,20 +67,25 @@ func New(base, apiKey string) *Client {
 	}
 }
 
-// ResolveAPIKey returns explicit when set, else $AIGW_API_KEY, else, when
-// useSaved, the key `aigw login` saved. It returns ErrNotLoggedIn when there
-// is none.
-func ResolveAPIKey(explicit string, useSaved bool) (string, error) {
+// ResolveAPIKey returns explicit when set. Otherwise, for the real API, it
+// returns $AIGW_API_KEY, else the key `aigw login` saved; for a temporary base
+// URL, only $AIGW_TEMP_API_KEY, so neither of the real keys can be sent there.
+// It returns ErrNotLoggedIn when there is none.
+func ResolveAPIKey(explicit string, temporaryBase bool) (string, error) {
 	if explicit != "" {
 		return explicit, nil
 	}
 
-	if v := os.Getenv(EnvAPIKey); v != "" {
-		return v, nil
+	if temporaryBase {
+		if v := os.Getenv(EnvTempAPIKey); v != "" {
+			return v, nil
+		}
+
+		return "", ErrNotLoggedIn
 	}
 
-	if !useSaved {
-		return "", ErrNotLoggedIn
+	if v := os.Getenv(EnvAPIKey); v != "" {
+		return v, nil
 	}
 
 	dir, err := config.Dir()
@@ -197,4 +214,36 @@ func checkPathValue(v string) error {
 	}
 
 	return nil
+}
+
+// loopbackOnlyTransport is for plain-http bases, which only a temporary
+// override can set. It dials only loopback addresses, whatever a hostname
+// resolves to, so a DNS answer cannot carry the key off the machine in clear
+// text, and it uses no proxy.
+func loopbackOnlyTransport() *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone() //nolint:forcetypeassert // DefaultTransport is always one
+	t.Proxy = nil
+
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	t.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, err
+		}
+
+		ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, ip := range ips {
+			if ip.IP.IsLoopback() {
+				return dialer.DialContext(ctx, network, net.JoinHostPort(ip.IP.String(), port))
+			}
+		}
+
+		return nil, fmt.Errorf("refusing plain http to %s: it does not resolve to a loopback address", host)
+	}
+
+	return t
 }

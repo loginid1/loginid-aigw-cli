@@ -180,8 +180,14 @@ func readKey(cmd *cobra.Command, fromStdin bool) (string, error) {
 		return "", errors.New("no API key given")
 	}
 
-	if strings.ContainsAny(key, " \t\r\n") {
-		return "", errors.New("the API key must be a single line with no spaces")
+	// Printable ASCII only. A control character would break the Authorization
+	// header on every later request, and a multi-byte character would be cut
+	// in half by the hint written to config.toml, leaving a file that neither
+	// login nor logout can read.
+	for _, r := range key {
+		if r < 0x21 || r > 0x7e {
+			return "", fmt.Errorf("the API key may only contain printable ASCII characters, with no spaces; found %q", r)
+		}
 	}
 
 	return key, nil

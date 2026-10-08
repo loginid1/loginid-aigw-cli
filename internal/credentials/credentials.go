@@ -141,7 +141,10 @@ func Delete(dir, profile string) (bool, error) {
 func Hint(key string) string {
 	const tail = 4
 
-	rest := strings.TrimPrefix(key, keyPrefix)
+	// Runes, not bytes: cutting a multi-byte character in half would write
+	// invalid UTF-8 into config.toml. Login only accepts ASCII keys, but a key
+	// from elsewhere must not be able to break the file either.
+	rest := []rune(strings.TrimPrefix(key, keyPrefix))
 	if len(rest) <= tail*2 {
 		return "…"
 	}
@@ -151,7 +154,7 @@ func Hint(key string) string {
 		head = keyPrefix
 	}
 
-	return head + "…" + rest[len(rest)-tail:]
+	return head + "…" + string(rest[len(rest)-tail:])
 }
 
 // LooksLikeKey reports whether key carries devcon's marker.

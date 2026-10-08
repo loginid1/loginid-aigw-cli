@@ -39,8 +39,12 @@ type Config map[string]Profile
 
 // Dir is $XDG_CONFIG_HOME/aigw, or ~/.config/aigw when that is unset. The same
 // path is used on every OS, as the gh and Stripe CLIs do, so docs can name it.
+//
+// A relative XDG_CONFIG_HOME is ignored, as the XDG spec requires: it would
+// put the credentials file inside whatever directory aigw runs in, where it
+// can end up committed.
 func Dir() (string, error) {
-	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" && filepath.IsAbs(xdg) {
 		return filepath.Join(xdg, "aigw"), nil
 	}
 
@@ -95,6 +99,21 @@ func CreateTemp(dir string) (*os.File, error) {
 	err := os.MkdirAll(dir, 0o700)
 	if err != nil {
 		return nil, fmt.Errorf("create %s: %w", dir, err)
+	}
+
+	// MkdirAll leaves an existing directory as it is. If others can write to
+	// it, they can rename their own config and key files over these, so
+	// tighten it before writing anything into it.
+	info, err := os.Stat(dir)
+	if err != nil {
+		return nil, fmt.Errorf("check %s: %w", dir, err)
+	}
+
+	if info.Mode().Perm()&0o077 != 0 {
+		err = os.Chmod(dir, 0o700)
+		if err != nil {
+			return nil, fmt.Errorf("%s is accessible to other users and could not be restricted: %w", dir, err)
+		}
 	}
 
 	// CreateTemp opens with 0600.

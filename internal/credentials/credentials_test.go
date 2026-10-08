@@ -118,11 +118,44 @@ func TestHint(t *testing.T) {
 		key:                 "aigw_sk_…3eF5",
 		"aigw_sk_short":     "…",
 		"other-key-abcdef1": "…def1",
+		"\u65e5\u672c\u8a9e\u65e5\u672c\u8a9e\u65e5\u672c\u8a9e\u65e5\u672c\u8a9e": "\u2026\u8a9e\u65e5\u672c\u8a9e", // whole characters, never half of one
 	}
 	for in, want := range cases {
 		got := credentials.Hint(in)
 		if got != want {
 			t.Errorf("Hint(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// Not parallel: keyring.MockInit swaps a package-level store.
+func TestSwitchingStorageRemovesTheOldKey(t *testing.T) {
+	keyring.MockInit()
+
+	dir := t.TempDir()
+
+	_, err := credentials.Save(dir, config.DefaultProfile, key, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = credentials.Save(dir, config.DefaultProfile, key, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = keyring.Get("aigw", config.DefaultProfile)
+	if !errors.Is(err, keyring.ErrNotFound) {
+		t.Errorf("keyring still holds the key after switching to a file: %v", err)
+	}
+
+	_, err = credentials.Save(dir, config.DefaultProfile, key, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = os.Stat(filepath.Join(dir, "credentials.toml"))
+	if !os.IsNotExist(err) {
+		t.Errorf("credentials.toml left behind after switching back to the keyring: %v", err)
 	}
 }

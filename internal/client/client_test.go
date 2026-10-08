@@ -148,3 +148,27 @@ func TestDoRejectsPathValuesThatMoveTheURL(t *testing.T) {
 		t.Error("the escaped request was not sent")
 	}
 }
+
+func TestPlainHTTPOnlyDialsLoopback(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	t.Cleanup(srv.Close)
+
+	// "localhost" by name works: it resolves to loopback.
+	local := strings.Replace(srv.URL, "127.0.0.1", "localhost", 1)
+
+	_, err := client.New(local, "k").Do(t.Context(), &client.Request{Method: http.MethodGet, Path: "/projects"})
+	if err != nil {
+		t.Fatalf("http to localhost: %v", err)
+	}
+
+	// An address off the machine is refused before any connection, so the key
+	// cannot travel in clear text. 192.0.2.1 is reserved for documentation.
+	_, err = client.New("http://192.0.2.1:1", "k").Do(t.Context(), &client.Request{Method: http.MethodGet, Path: "/projects"})
+	if err == nil || !strings.Contains(err.Error(), "does not resolve to a loopback address") {
+		t.Fatalf("http off the machine: %v", err)
+	}
+}

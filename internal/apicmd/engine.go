@@ -13,7 +13,6 @@ import (
 	"os"
 	"slices"
 	"strings"
-	"sync"
 
 	"github.com/spf13/cobra"
 
@@ -50,9 +49,10 @@ func addAll(root *cobra.Command, target func() (Target, error)) {
 // Target is where API requests go.
 type Target struct {
 	BaseURL string
-	// Temporary is true when AIGW_TEMP_API_BASE chose BaseURL. The key
-	// `aigw login` saved is then never sent: a variable set by a cloned
-	// repo's .mcp.json or .envrc must not be able to collect it.
+	// Temporary is true when AIGW_TEMP_API_BASE chose BaseURL. The key then
+	// comes only from --api-key or AIGW_TEMP_API_KEY: never the saved login
+	// and never AIGW_API_KEY, so a variable set by a cloned repo's .mcp.json
+	// or .envrc cannot collect a key it does not already know.
 	Temporary bool
 }
 
@@ -61,8 +61,9 @@ type Target struct {
 //
 // TEMP: envTempAPIBase overrides it, for testing against local and staging
 // servers until there is a proper answer for those. It is left out of all help
-// text on purpose; it must be https, or http on a loopback host; and every run
-// that uses it says so on stderr. Remove it once that answer exists.
+// text on purpose; it must be https, or http on localhost or a loopback IP;
+// and every run that uses it says so on stderr. Remove it once that answer
+// exists.
 func ResolveTarget() (Target, error) {
 	override := os.Getenv(envTempAPIBase)
 	if override == "" {
@@ -70,7 +71,10 @@ func ResolveTarget() (Target, error) {
 	}
 
 	u, err := url.Parse(override)
-	if err != nil || u.Host == "" || u.User != nil {
+	// No query or fragment: the API path is appended to the base as a string,
+	// and would land inside them, so every call would hit the same URL.
+	if err != nil || u.Host == "" || u.User != nil || u.Opaque != "" ||
+		u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(override, "#") {
 		return Target{}, fmt.Errorf("%s=%q is not a usable base URL", envTempAPIBase, override)
 	}
 
@@ -81,8 +85,11 @@ func ResolveTarget() (Target, error) {
 	return Target{BaseURL: override, Temporary: true}, nil
 }
 
+// isLoopback accepts "localhost" and loopback IPs. Not "*.localhost": Go
+// resolves those through DNS, which a hostile network answers. For plain http
+// the client also refuses to dial anything that does not resolve to loopback.
 func isLoopback(host string) bool {
-	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+	if host == "localhost" {
 		return true
 	}
 
@@ -91,16 +98,14 @@ func isLoopback(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// Warn says on w, once per run, that requests go to a temporary base URL.
+// Warn says on w that requests go to a temporary base URL. Each run resolves
+// the target once, so this prints once.
 func (t Target) Warn(w io.Writer) {
 	if t.Temporary {
-		warnTempBase.Do(func() {
-			fmt.Fprintf(w, "warning: %s is set; API requests go to %s, and the saved login is not used\n", envTempAPIBase, t.BaseURL)
-		})
+		fmt.Fprintf(w, "warning: %s is set; API requests go to %s with the key from --%s or %s\n",
+			envTempAPIBase, t.BaseURL, flagAPIKey, client.EnvTempAPIKey)
 	}
 }
-
-var warnTempBase sync.Once
 
 // ensureGroups finds or creates the chain of noun commands for path. The top
 // noun carries --api-key, so `aigw version` does not show it.
@@ -226,10 +231,11 @@ func run(cmd *cobra.Command, op *Operation, resolveTarget func() (Target, error)
 
 	flagKey, _ := cmd.Flags().GetString(flagAPIKey)
 
-	apiKey, err := client.ResolveAPIKey(flagKey, !target.Temporary)
+	apiKey, err := client.ResolveAPIKey(flagKey, target.Temporary)
 	if errors.Is(err, client.ErrNotLoggedIn) && target.Temporary {
 		return &ExitError{Code: ExitNotAuthenticated, Err: fmt.Errorf(
-			"%s is set, so the saved login is not used: pass --%s or set %s", envTempAPIBase, flagAPIKey, client.EnvAPIKey)}
+			"%s is set: pass --%s or set %s (%s and the saved login are not used)",
+			envTempAPIBase, flagAPIKey, client.EnvTempAPIKey, client.EnvAPIKey)}
 	}
 
 	if err != nil {

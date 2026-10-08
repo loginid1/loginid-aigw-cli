@@ -7,7 +7,8 @@ import (
 	"strings"
 )
 
-// APIError is a response with a status of 400 or above.
+// APIError is a response with a status of 300 or above. Redirects count: the
+// client never follows them.
 type APIError struct {
 	Method, Path string
 	Status       int
