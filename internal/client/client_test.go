@@ -172,3 +172,46 @@ func TestPlainHTTPOnlyDialsLoopback(t *testing.T) {
 		t.Fatalf("http off the machine: %v", err)
 	}
 }
+
+func TestServerTextIsMadeSafe(t *testing.T) {
+	t.Parallel()
+
+	// \u001b decodes to a real ESC, which would start a terminal escape.
+	body := `{"msg":"bad\u001b[31m red\nline","msgCode":"bad_request"}` + strings.Repeat(" ", 10)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, body)
+	}))
+	t.Cleanup(srv.Close)
+
+	_, err := client.New(srv.URL, "k").Do(t.Context(), &client.Request{Method: http.MethodGet, Path: "/projects"})
+	if err == nil || strings.ContainsAny(err.Error(), "\x1b\n") || !strings.Contains(err.Error(), "bad[31m red line") {
+		t.Errorf("error text %q", err)
+	}
+
+	long := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = io.WriteString(w, "<html>"+strings.Repeat("x", 5000))
+	}))
+	t.Cleanup(long.Close)
+
+	_, err = client.New(long.URL, "k").Do(t.Context(), &client.Request{Method: http.MethodGet, Path: "/projects"})
+	if err == nil || len(err.Error()) > 700 {
+		t.Errorf("a 5000-byte error page made a %d-byte error", len(err.Error()))
+	}
+}
+
+func TestResponseSizeIsBounded(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(make([]byte, 11<<20))
+	}))
+	t.Cleanup(srv.Close)
+
+	_, err := client.New(srv.URL, "k").Do(t.Context(), &client.Request{Method: http.MethodGet, Path: "/projects"})
+	if err == nil || !strings.Contains(err.Error(), "larger than 10 MiB") {
+		t.Errorf("an 11 MiB response: %v", err)
+	}
+}

@@ -64,15 +64,20 @@ func Save(dir, profile, key string, insecure bool) (string, error) {
 		return "", err
 	}
 
-	if hadPrev && prev.Storage != p.Storage {
-		_ = deleteKey(dir, profile, prev.Storage)
-	}
-
 	cfg[profile] = p
 
 	err = config.Save(dir, cfg)
 	if err != nil {
 		return "", err
+	}
+
+	// After the new key is in place, so a failure here cannot lose both. It
+	// is still an error: the user believes the old key is gone.
+	if hadPrev && prev.Storage != p.Storage {
+		err = deleteKey(dir, profile, prev.Storage)
+		if err != nil {
+			return where, fmt.Errorf("saved the new key to %s, but the old one is still in its previous store: %w", where, err)
+		}
 	}
 
 	return where, nil
@@ -113,27 +118,52 @@ func Load(dir, profile string) (string, error) {
 	return key, nil
 }
 
-// Delete removes profile's key and its config entry. It reports false when
-// there was nothing to remove.
-func Delete(dir, profile string) (bool, error) {
+// Deleted says what Delete did.
+type Deleted struct {
+	// Removed is false when there was nothing to remove.
+	Removed bool
+	// MovedTo is where an unreadable config.toml was moved, if it was.
+	MovedTo string
+}
+
+// Delete removes profile's key and its config entry.
+//
+// An unreadable config.toml does not stop it: it removes the profile's key
+// from both the keyring and the file store, since it cannot tell which one was
+// used, then moves the config aside.
+func Delete(dir, profile string) (Deleted, error) {
 	cfg, err := config.Load(dir)
+	if errors.Is(err, config.ErrUnreadable) {
+		err = errors.Join(deleteKey(dir, profile, config.StorageKeyring), deleteKey(dir, profile, config.StorageFile))
+		if err != nil {
+			return Deleted{}, err
+		}
+
+		movedTo, moveErr := config.MoveAside(dir)
+		if moveErr != nil {
+			return Deleted{}, moveErr
+		}
+
+		return Deleted{Removed: true, MovedTo: movedTo}, nil
+	}
+
 	if err != nil {
-		return false, err
+		return Deleted{}, err
 	}
 
 	p, ok := cfg[profile]
 	if !ok {
-		return false, nil
+		return Deleted{}, nil
 	}
 
 	err = deleteKey(dir, profile, p.Storage)
 	if err != nil {
-		return false, err
+		return Deleted{}, err
 	}
 
 	delete(cfg, profile)
 
-	return true, config.Save(dir, cfg)
+	return Deleted{Removed: true}, config.Save(dir, cfg)
 }
 
 // Hint masks key for display: "aigw_sk_…Xk7Q". Every key shares the prefix,

@@ -88,7 +88,7 @@ func tool(op *apicmd.Operation) *mcp.Tool {
 		OpenWorldHint: &closedWorld,
 		// PUT replaces a resource and DELETE removes one; both can undo
 		// earlier work. POST adds, and PATCH changes only what it names.
-		IdempotentHint: op.Method == http.MethodPut || op.Method == http.MethodDelete,
+		IdempotentHint: op.Method == http.MethodGet || op.Method == http.MethodPut || op.Method == http.MethodDelete,
 	}
 
 	if op.Method == http.MethodPost || op.Method == http.MethodPatch {

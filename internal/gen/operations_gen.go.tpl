@@ -46,7 +46,17 @@ var Operations = []Operation{
 			{{- end }}
 		},
 		{{- end }}
+		{{- if .HasFieldEnums }}
+		FieldEnums: map[string][]string{
+			{{- range .Fields }}{{ if .Enum }}
+			{{ q .Path }}: {{ qs .Enum }},
+			{{- end }}{{ end }}
+		},
+		{{- end }}
 		HasBody: {{ .HasBody }},
+		{{- if .RequiredLists }}
+		RequiredLists: {{ qs .RequiredLists }},
+		{{- end }}
 		{{- if .ReturnsSecret }}
 		ReturnsSecret: true,
 		{{- end }}

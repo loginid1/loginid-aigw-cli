@@ -116,6 +116,7 @@ type outOp struct {
 	Args, Params                         []outParam
 	Fields                               []field
 	InputSchema                          string
+	RequiredLists                        []string
 	ReturnsSecret                        bool
 	HasBody                              bool
 }
@@ -126,7 +127,21 @@ type outParam struct {
 	Enum                       []string
 }
 
-type field struct{ Path, Type string }
+// HasFieldEnums reports whether any -d field has a fixed set of values.
+func (o outOp) HasFieldEnums() bool {
+	for _, f := range o.Fields {
+		if len(f.Enum) > 0 {
+			return true
+		}
+	}
+
+	return false
+}
+
+type field struct {
+	Path, Type string
+	Enum       []string
+}
 
 func generate(specPath, overlayPath, ref string) ([]byte, error) {
 	var s spec
@@ -321,6 +336,30 @@ func buildOp(s *spec, path, method string, o *operation, command string) (outOp,
 
 		slices.SortFunc(fields, func(a, b field) int { return strings.Compare(a.Path, b.Path) })
 		op.Fields = fields
+
+		// Required top-level lists of objects have no flag, so help must
+		// point at -d for them.
+		for _, name := range body.Required {
+			prop, err := resolve(s, body.Properties[name])
+			if err != nil {
+				return outOp{}, err
+			}
+
+			if prop.Type != "array" {
+				continue
+			}
+
+			item, err := resolve(s, prop.Items)
+			if err != nil {
+				return outOp{}, err
+			}
+
+			if item.Type == "object" {
+				op.RequiredLists = append(op.RequiredLists, name)
+			}
+		}
+
+		slices.Sort(op.RequiredLists)
 	}
 
 	return op, nil
@@ -373,12 +412,12 @@ func walkBody(s *spec, obj *schema, apiPrefix, flagPrefix string, required []str
 				continue
 			}
 
-			*fields = append(*fields, field{apiName + "[]", item.Type})
+			*fields = append(*fields, field{apiName + "[]", item.Type, item.Enum})
 			if err := addFlag(outParam{Name: apiName, Flag: flagName, In: "body", Type: "[]" + item.Type, Required: slices.Contains(required, name), Enum: item.Enum, Desc: desc}); err != nil {
 				return err
 			}
 		default:
-			*fields = append(*fields, field{apiName, prop.Type})
+			*fields = append(*fields, field{apiName, prop.Type, prop.Enum})
 			if err := addFlag(outParam{Name: apiName, Flag: flagName, In: "body", Type: prop.Type, Required: slices.Contains(required, name), Enum: prop.Enum, Desc: desc}); err != nil {
 				return err
 			}
@@ -421,9 +460,9 @@ func walkFields(s *spec, obj *schema, prefix string, fields *[]field) error {
 				continue
 			}
 
-			*fields = append(*fields, field{path + "[]", item.Type})
+			*fields = append(*fields, field{path + "[]", item.Type, item.Enum})
 		default:
-			*fields = append(*fields, field{path, prop.Type})
+			*fields = append(*fields, field{path, prop.Type, prop.Enum})
 		}
 	}
 
@@ -489,6 +528,17 @@ func describe(o *operation) (short, long string) {
 	short = strings.TrimSuffix(short, ".")
 	if short == "" {
 		short = o.Summary
+	}
+
+	// One line in a command table. The full text stays in Long.
+	const maxShort = 80
+	if r := []rune(short); len(r) > maxShort {
+		cut := string(r[:maxShort-1])
+		if i := strings.LastIndex(cut, " "); i > maxShort/2 {
+			cut = cut[:i]
+		}
+
+		short = strings.TrimRight(cut, ",;:") + "…"
 	}
 
 	return short, long

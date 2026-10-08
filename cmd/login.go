@@ -204,12 +204,16 @@ func newLogoutCommand() *cobra.Command {
 				return err
 			}
 
-			removed, err := credentials.Delete(dir, config.DefaultProfile)
+			deleted, err := credentials.Delete(dir, config.DefaultProfile)
 			if err != nil {
 				return err
 			}
 
-			if removed {
+			if deleted.MovedTo != "" {
+				fmt.Fprintf(cmd.ErrOrStderr(), "The config file could not be read; moved it to %s.\n", deleted.MovedTo)
+			}
+
+			if deleted.Removed {
 				fmt.Fprintln(cmd.ErrOrStderr(), "Removed the saved API key.")
 			} else {
 				fmt.Fprintln(cmd.ErrOrStderr(), "No saved API key.")

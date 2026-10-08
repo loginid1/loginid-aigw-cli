@@ -42,9 +42,9 @@ func TestKeyringRoundTrip(t *testing.T) {
 		t.Errorf("config.toml:\n%s", raw)
 	}
 
-	removed, err := credentials.Delete(dir, config.DefaultProfile)
-	if !removed || err != nil {
-		t.Fatalf("Delete = %v, %v", removed, err)
+	deleted, err := credentials.Delete(dir, config.DefaultProfile)
+	if !deleted.Removed || err != nil {
+		t.Fatalf("Delete = %+v, %v", deleted, err)
 	}
 
 	_, err = keyring.Get("aigw", config.DefaultProfile)
@@ -52,8 +52,8 @@ func TestKeyringRoundTrip(t *testing.T) {
 		t.Errorf("key still in keyring after Delete: %v", err)
 	}
 
-	removed, _ = credentials.Delete(dir, config.DefaultProfile)
-	if removed {
+	deleted, _ = credentials.Delete(dir, config.DefaultProfile)
+	if deleted.Removed {
 		t.Error("second Delete reported a removal")
 	}
 }
@@ -157,5 +157,43 @@ func TestSwitchingStorageRemovesTheOldKey(t *testing.T) {
 	_, err = os.Stat(filepath.Join(dir, "credentials.toml"))
 	if !os.IsNotExist(err) {
 		t.Errorf("credentials.toml left behind after switching back to the keyring: %v", err)
+	}
+}
+
+// Not parallel: keyring.MockInit swaps a package-level store.
+func TestDeleteRecoversFromAnUnreadableConfig(t *testing.T) {
+	keyring.MockInit()
+
+	dir := t.TempDir()
+
+	_, err := credentials.Save(dir, config.DefaultProfile, key, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = os.WriteFile(filepath.Join(dir, "config.toml"), []byte("[default\nbroken"), 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = credentials.Load(dir, config.DefaultProfile)
+	if !errors.Is(err, config.ErrUnreadable) || !strings.Contains(err.Error(), "aigw logout") {
+		t.Fatalf("want ErrUnreadable pointing at logout, got %v", err)
+	}
+
+	deleted, err := credentials.Delete(dir, config.DefaultProfile)
+	if err != nil || !deleted.Removed || deleted.MovedTo != filepath.Join(dir, "config.toml.broken") {
+		t.Fatalf("Delete = %+v, %v", deleted, err)
+	}
+
+	_, err = keyring.Get("aigw", config.DefaultProfile)
+	if !errors.Is(err, keyring.ErrNotFound) {
+		t.Errorf("key still in the keyring: %v", err)
+	}
+
+	// The next login starts clean.
+	_, err = credentials.Save(dir, config.DefaultProfile, key, false)
+	if err != nil {
+		t.Errorf("login after the reset: %v", err)
 	}
 }

@@ -7,7 +7,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -215,6 +218,9 @@ func TestDataRejectsBadInput(t *testing.T) {
 		"skipped index": "scopes[1][value]=x",
 		"not key=value": "name",
 		"malformed key": "scopes[0[value]=x",
+		"huge index":    "scopes[300000000][value]=x",
+		"index alias":   "scopes[00][value]=x",
+		"bad enum":      "kind=BOGUS",
 	}
 
 	for name, d := range cases {
@@ -286,5 +292,83 @@ func TestErrorBodyShapes(t *testing.T) {
 		if err == nil || !strings.HasSuffix(err.Error(), tc.want) {
 			t.Errorf("%s: error = %v, want suffix %q", name, err, tc.want)
 		}
+	}
+}
+
+// Every -d example printed in help must work when copied as written.
+func TestEveryDataExampleWorks(t *testing.T) {
+	t.Parallel()
+
+	exampleRe := regexp.MustCompile(`e\.g\. -d "([^"]+)"`)
+
+	for _, op := range apicmd.Operations {
+		if !op.HasBody {
+			continue
+		}
+
+		srv, got := serve(t, http.StatusOK, `{}`)
+
+		args := slices.Clone(op.Command)
+		for range op.Args {
+			args = append(args, "id-1")
+		}
+
+		help, err := runAigw(t, srv.URL, append(slices.Clone(args), "--help")...)
+		if err != nil {
+			t.Fatalf("%s --help: %v", op.ID, err)
+		}
+
+		m := exampleRe.FindStringSubmatch(help)
+		if m == nil {
+			t.Errorf("%s: no -d example in help", op.ID)
+
+			continue
+		}
+
+		for _, p := range op.Params {
+			if p.In == apicmd.InPath {
+				args = append(args, "--"+p.Flag, "id-2")
+			}
+		}
+
+		_, err = runAigw(t, srv.URL, append(args, "-d", m[1], apiKey, "k")...)
+		if err != nil {
+			t.Errorf("%s: -d %q from help fails: %v", op.ID, m[1], err)
+		}
+
+		if got.method == "" {
+			t.Errorf("%s: -d %q from help sent no request", op.ID, m[1])
+		}
+	}
+}
+
+func TestDeleteRefusesDevNull(t *testing.T) {
+	t.Parallel()
+
+	srv, got := serve(t, http.StatusNoContent, "")
+
+	devNull, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer devNull.Close()
+
+	var out bytes.Buffer
+
+	root := &cobra.Command{Use: "aigw", SilenceUsage: true, SilenceErrors: true}
+	apicmd.AddAllWithBase(root, srv.URL)
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetIn(devNull)
+	root.SetArgs([]string{projects, "delete", "p1", apiKey, "k"})
+
+	// /dev/null is a character device, but not a terminal: refuse, don't prompt.
+	err = root.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--confirm") || strings.Contains(out.String(), "Continue?") {
+		t.Errorf("err %v, output %q", err, out.String())
+	}
+
+	if got.method != "" {
+		t.Error("a request was sent")
 	}
 }

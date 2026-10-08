@@ -67,11 +67,33 @@ func Load(dir string) (Config, error) {
 		return cfg, nil
 	}
 
+	var parseErr toml.ParseError
+	if errors.As(err, &parseErr) {
+		return nil, fmt.Errorf("%w: %s: %w; run `aigw logout` to reset it", ErrUnreadable, path(dir), err)
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path(dir), err)
 	}
 
 	return cfg, nil
+}
+
+// ErrUnreadable means config.toml exists but is not valid TOML.
+var ErrUnreadable = errors.New("config file is unreadable")
+
+// MoveAside renames an unreadable config.toml to config.toml.broken, so the
+// next write starts clean while the old content stays for a look. It returns
+// the new path.
+func MoveAside(dir string) (string, error) {
+	dest := path(dir) + ".broken"
+
+	err := os.Rename(path(dir), dest)
+	if err != nil {
+		return "", fmt.Errorf("move %s aside: %w", path(dir), err)
+	}
+
+	return dest, nil
 }
 
 // Save writes cfg to dir, replacing the file in one step so a crash cannot

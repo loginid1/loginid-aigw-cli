@@ -5,8 +5,11 @@ export GOARCH?=$(shell go env GOARCH)
 export GOPRIVATE:=gitlab.com/loginid
 
 export GOLINT_VER?=2.12.2
-golint_name := golangci-lint-v$(GOLINT_VER)
-golint_exe := /tmp/$(golint_name)
+# Built with `go install` at a pinned version, so the Go checksum database
+# verifies it, and kept in the project's build/ rather than a shared /tmp,
+# where another user could plant a binary at the expected path.
+golint_dir := $(CURDIR)/build/bin/golangci-lint-v$(GOLINT_VER)
+golint_exe := $(golint_dir)/golangci-lint
 
 commit := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 # Read from go.mod rather than hardcoding, so renaming the module does not
@@ -35,9 +38,9 @@ build:
 	-X $(module)/internal/version.GitCommit=$(commit)" ./main.go
 
 lint_prep:
-	@if [ ! -f $(golint_exe) ]; then \
-		curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b /tmp v$(GOLINT_VER); \
-		mv /tmp/golangci-lint $(golint_exe); \
+	@if [ ! -x $(golint_exe) ]; then \
+		GOBIN=$(golint_dir) GOOS=$$(go env GOHOSTOS) GOARCH=$$(go env GOHOSTARCH) \
+		go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v$(GOLINT_VER); \
 	fi
 
 lint: lint_prep

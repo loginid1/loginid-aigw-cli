@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"unicode"
 )
 
 // APIError is a response with a status of 300 or above. Redirects count: the
@@ -66,9 +67,35 @@ func newAPIError(req *Request, status int, body []byte) *APIError {
 		msg = eb.text()
 	}
 
+	msg = Printable(msg)
+	if len(msg) > maxMessageBytes {
+		msg = strings.ToValidUTF8(msg[:maxMessageBytes], "") + "…"
+	}
+
 	if msg == "" {
 		msg = http.StatusText(status)
 	}
 
 	return &APIError{Method: req.Method, Path: req.Path, Status: status, Message: msg, Scope: req.Scope}
+}
+
+// maxMessageBytes bounds the server text an error carries, so an HTML error
+// page does not fill the terminal.
+const maxMessageBytes = 500
+
+// Printable makes server text safe for a terminal on one line: control
+// characters, including the ESC that starts a terminal escape sequence, are
+// dropped, and line breaks become spaces. JSON decoding has already turned any
+// \u001b in the body into a real ESC by this point.
+func Printable(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r == '\n' || r == '\r' || r == '\t':
+			return ' '
+		case unicode.IsControl(r):
+			return -1
+		default:
+			return r
+		}
+	}, s)
 }

@@ -13,8 +13,10 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/client"
 )
@@ -173,7 +175,7 @@ func newOperationCommand(op *Operation, target func() (Target, error)) *cobra.Co
 	for _, p := range op.Params {
 		desc := p.Desc
 		if len(p.Enum) > 0 {
-			desc += " (one of: " + strings.Join(p.Enum, ", ") + ")"
+			desc += " (one of: " + enumList(p.Enum) + ")"
 		}
 
 		if p.Required {
@@ -205,7 +207,7 @@ func newOperationCommand(op *Operation, target func() (Target, error)) *cobra.Co
 	}
 
 	if op.HasBody {
-		fs.StringArrayP(flagData, "d", nil, `Body field as key=value, nested with brackets, e.g. -d "scopes[0][value]=payments:read"`)
+		fs.StringArrayP(flagData, "d", nil, "Body field as key=value, nested with brackets, e.g. -d "+dataExample(op))
 	}
 
 	fs.StringP(flagOutput, "o", "json", "Output format (json)")
@@ -292,7 +294,7 @@ func run(cmd *cobra.Command, op *Operation, resolveTarget func() (Target, error)
 // required only inside an optional object are not listed; the server reports
 // those.
 func requiredExample(op *Operation) string {
-	if len(op.Args) == 0 && !slices.ContainsFunc(op.Params, func(p Param) bool { return p.Required }) {
+	if len(op.Args) == 0 && len(op.RequiredLists) == 0 && !slices.ContainsFunc(op.Params, func(p Param) bool { return p.Required }) {
 		return ""
 	}
 
@@ -321,7 +323,73 @@ func requiredExample(op *Operation) string {
 		}
 	}
 
+	for _, list := range op.RequiredLists {
+		if field := firstField(op, list+"[]."); field != "" {
+			b.WriteString(` -d "` + bracketKey(field) + "=" + exampleValue(op, field) + `"`)
+		}
+	}
+
 	return b.String()
+}
+
+// dataExample is a -d example built from one of op's own fields: a field in
+// a list of objects if there is one, since only -d can set those.
+func dataExample(op *Operation) string {
+	field := firstField(op, "")
+	if listField := firstField(op, "[]."); listField != "" {
+		field = listField
+	}
+
+	if field == "" {
+		return `"key=value"`
+	}
+
+	return `"` + bracketKey(field) + "=" + exampleValue(op, field) + `"`
+}
+
+// exampleValue is a placeholder named after the field, or, for a field with a
+// fixed set of values, the first real one, so the example works as written.
+func exampleValue(op *Operation, field string) string {
+	for _, v := range op.FieldEnums[field] {
+		if v != "" {
+			return v
+		}
+	}
+
+	return "<" + field[strings.LastIndex(field, ".")+1:] + ">"
+}
+
+// firstField is the alphabetically first Fields path containing sub, so help
+// text is the same on every run.
+func firstField(op *Operation, sub string) string {
+	var paths []string
+
+	for path := range op.Fields {
+		if strings.Contains(path, sub) && !strings.HasSuffix(path, "[]") {
+			paths = append(paths, path)
+		}
+	}
+
+	slices.Sort(paths)
+
+	if len(paths) == 0 {
+		return ""
+	}
+
+	return paths[0]
+}
+
+// bracketKey writes a Fields path the way -d takes it: "scopes[].value"
+// becomes "scopes[0][value]".
+func bracketKey(path string) string {
+	path = strings.ReplaceAll(path, "[]", "[0]")
+
+	parts := strings.Split(path, ".")
+	for i := 1; i < len(parts); i++ {
+		parts[i] = "[" + parts[i] + "]"
+	}
+
+	return strings.Join(parts, "")
 }
 
 // buildBody assembles the request body from body flags first, then -d values,
@@ -350,6 +418,10 @@ func buildBody(cmd *cobra.Command, op *Operation) (map[string]any, error) {
 
 			items := make([]any, 0, len(raw))
 			for _, r := range raw {
+				if len(p.Enum) > 0 && !slices.Contains(p.Enum, r) {
+					return nil, fmt.Errorf("--%s: %q is not one of: %s", p.Flag, r, enumList(p.Enum))
+				}
+
 				item, coerceErr := coerce(strings.TrimPrefix(p.Type, ListPrefix), r)
 				if coerceErr != nil {
 					return nil, fmt.Errorf("--%s: %w", p.Flag, coerceErr)
@@ -362,7 +434,7 @@ func buildBody(cmd *cobra.Command, op *Operation) (map[string]any, error) {
 		default:
 			s, _ := cmd.Flags().GetString(p.Flag)
 			if len(p.Enum) > 0 && !slices.Contains(p.Enum, s) {
-				return nil, fmt.Errorf("--%s: %q is not one of: %s", p.Flag, s, strings.Join(p.Enum, ", "))
+				return nil, fmt.Errorf("--%s: %q is not one of: %s", p.Flag, s, enumList(p.Enum))
 			}
 
 			v = s
@@ -376,15 +448,10 @@ func buildBody(cmd *cobra.Command, op *Operation) (map[string]any, error) {
 
 	data, _ := cmd.Flags().GetStringArray(flagData)
 	for _, d := range data {
-		root, err = applyData(root, op.Fields, d)
+		root, err = applyData(root, op, d)
 		if err != nil {
 			return nil, fmt.Errorf("-d %q: %w", d, err)
 		}
-	}
-
-	err = checkNoHoles(root)
-	if err != nil {
-		return nil, err
 	}
 
 	return root.(map[string]any), nil
@@ -415,10 +482,10 @@ func confirmDelete(cmd *cobra.Command, op *Operation, args []string) error {
 	return nil
 }
 
+// isTerminal asks the OS whether f is a terminal. A character-device check is
+// not enough: /dev/null is one too, and would get a prompt nobody can answer.
 func isTerminal(f *os.File) bool {
-	info, err := f.Stat()
-
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
+	return term.IsTerminal(int(f.Fd()))
 }
 
 // printJSON writes an indented copy of body. A body that is empty, as on a 204,
@@ -432,9 +499,17 @@ func printJSON(w io.Writer, body []byte) error {
 
 	err := json.Indent(&buf, body, "", "  ")
 	if err != nil {
-		// Not JSON: pass it through rather than lose it.
+		// Not JSON: pass it through rather than lose it, but without control
+		// characters, which could drive the terminal. Valid JSON cannot hold
+		// raw ones, so the indented path needs no such care.
 		buf.Reset()
-		buf.Write(body)
+		buf.WriteString(strings.Map(func(r rune) rune {
+			if r != '\n' && r != '\t' && unicode.IsControl(r) {
+				return -1
+			}
+
+			return r
+		}, string(body)))
 	}
 
 	buf.WriteByte('\n')
@@ -459,4 +534,20 @@ func kebab(s string) string {
 	}
 
 	return b.String()
+}
+
+// enumList renders allowed values for help and errors. An empty value is
+// shown as "", not as nothing between two commas.
+func enumList(values []string) string {
+	shown := make([]string, len(values))
+
+	for i, v := range values {
+		if v == "" {
+			v = `""`
+		}
+
+		shown[i] = v
+	}
+
+	return strings.Join(shown, ", ")
 }

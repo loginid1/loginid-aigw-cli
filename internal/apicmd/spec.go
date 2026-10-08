@@ -27,6 +27,12 @@ type Operation struct {
 	// Fields maps every settable body path to its type, for -d. Array elements
 	// are written "[]", e.g. "scopes[].value".
 	Fields map[string]string
+	// FieldEnums holds the allowed values of the Fields that have a fixed set,
+	// so -d refuses what the matching flag would.
+	FieldEnums map[string][]string
+	// RequiredLists names required top-level lists of objects. They have no
+	// flag, so help points at -d for them.
+	RequiredLists []string
 	// HasBody is true when the operation takes a JSON request body.
 	HasBody bool
 	// ReturnsSecret is true when a success response carries a one-time

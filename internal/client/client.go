@@ -33,7 +33,10 @@ const (
 	EnvTempAPIKey = "AIGW_TEMP_API_KEY" //nolint:gosec // the name of an env var, not a credential
 )
 
-const requestTimeout = 30 * time.Second
+const (
+	requestTimeout   = 30 * time.Second
+	maxResponseBytes = 10 << 20
+)
 
 // ErrNotLoggedIn means no key was given and none is saved.
 var ErrNotLoggedIn = errors.New("not logged in")
@@ -154,9 +157,15 @@ func (c *Client) Do(ctx context.Context, req *Request) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	// Bounded: an API answer is small, and under MCP the whole body goes into
+	// the model's context.
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
+	}
+
+	if len(respBody) > maxResponseBytes {
+		return nil, fmt.Errorf("%s %s: response is larger than %d MiB", req.Method, req.Path, maxResponseBytes>>20)
 	}
 
 	if resp.StatusCode >= http.StatusMultipleChoices {

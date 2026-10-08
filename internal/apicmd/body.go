@@ -3,15 +3,16 @@ package apicmd
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 )
 
 // applyData sets one -d key=value entry on root. Keys use Stripe's bracket
 // form: "name", "exchange[audience]", "scopes[0][value]". The value is typed
-// from fields, and a key the spec does not know is an error, so a typo fails
+// and checked from op, and a key the spec does not know is an error, so a typo fails
 // here rather than as a confusing 400.
-func applyData(root any, fields map[string]string, entry string) (any, error) {
+func applyData(root any, op *Operation, entry string) (any, error) {
 	key, value, ok := strings.Cut(entry, "=")
 	if !ok {
 		return nil, errors.New("want key=value")
@@ -22,9 +23,15 @@ func applyData(root any, fields map[string]string, entry string) (any, error) {
 		return nil, err
 	}
 
-	typ, ok := fields[normalize(segs)]
+	path := normalize(segs)
+
+	typ, ok := op.Fields[path]
 	if !ok {
 		return nil, fmt.Errorf("unknown field %q", key)
+	}
+
+	if enum := op.FieldEnums[path]; len(enum) > 0 && !slices.Contains(enum, value) {
+		return nil, fmt.Errorf("%q is not one of: %s", value, enumList(enum))
 	}
 
 	v, err := coerce(typ, value)
@@ -86,10 +93,20 @@ func normalize(segs []string) string {
 	return b.String()
 }
 
+// isIndex accepts plain decimal indexes only: "0", "12", never "00", "+0" or
+// "-1". Otherwise scopes[0] and scopes[00] would quietly name the same item.
 func isIndex(s string) bool {
-	_, err := strconv.Atoi(s)
+	if s == "" || (len(s) > 1 && s[0] == '0') {
+		return false
+	}
 
-	return err == nil
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+
+	return true
 }
 
 func coerce(typ, raw string) (any, error) {
@@ -129,18 +146,20 @@ func insert(node any, segs []string, value any) (any, error) {
 
 	seg, rest := segs[0], segs[1:]
 
-	idx, convErr := strconv.Atoi(seg)
-	if convErr == nil {
-		if idx < 0 {
-			return nil, fmt.Errorf("negative index %d", idx)
-		}
-
+	if isIndex(seg) {
 		list, ok := node.([]any)
 		if node != nil && !ok {
-			return nil, fmt.Errorf("index [%d] used on a field that is not a list", idx)
+			return nil, fmt.Errorf("index [%s] used on a field that is not a list", seg)
 		}
 
-		for len(list) <= idx {
+		// Items are added in order, one at a time: an index past the end
+		// would leave a gap, and a huge one would allocate all of it first.
+		idx, err := strconv.Atoi(seg)
+		if err != nil || idx > len(list) {
+			return nil, fmt.Errorf("index [%s] skips [%d]: set list items in order, starting at [0]", seg, len(list))
+		}
+
+		if idx == len(list) {
 			list = append(list, nil)
 		}
 
@@ -171,31 +190,4 @@ func insert(node any, segs []string, value any) (any, error) {
 	obj[seg] = v
 
 	return obj, nil
-}
-
-// checkNoHoles rejects lists with skipped indexes, such as scopes[1] set
-// without scopes[0], which would otherwise send a null the API never asked for.
-func checkNoHoles(node any) error {
-	switch n := node.(type) {
-	case map[string]any:
-		for k, v := range n {
-			err := checkNoHoles(v)
-			if err != nil {
-				return fmt.Errorf("%s%w", k, err)
-			}
-		}
-	case []any:
-		for i, v := range n {
-			if v == nil {
-				return fmt.Errorf("[%d]: index skipped", i)
-			}
-
-			err := checkNoHoles(v)
-			if err != nil {
-				return fmt.Errorf("[%d]%w", i, err)
-			}
-		}
-	}
-
-	return nil
 }
