@@ -16,6 +16,8 @@ stages:
 
 .build_common_rules:
   rules:
+    - if: $MIRROR_SYNC == "true" # the mirror pipeline runs mirror-sync and nothing else
+      when: never
     - if: $CI_PIPELINE_SOURCE == "merge_request_event" # only run on MRs
     - if: $CI_COMMIT_TAG
       variables:
@@ -87,3 +89,35 @@ generate-check:
   script:
     - make generate_check
   allow_failure: true
+
+# Pushes main to the read-only mirror at github.com/loginid1/loginid-aigw-cli.
+# Runs only in pipelines that set MIRROR_SYNC=true: the daily schedule, or a
+# manual run. That schedule also sets SAST_DISABLED, SECRET_DETECTION_DISABLED
+# and DEPENDENCY_SCANNING_DISABLED so the included security jobs stay out of it.
+#
+# GITHUB_MIRROR_SSH_KEY_B64 is a base64 write deploy key on the GitHub repo,
+# stored as a protected variable, so only protected refs can push.
+# The push is not forced: if GitHub ever has commits GitLab lacks, the job fails
+# instead of overwriting them.
+mirror-sync:
+  stage: build
+  image: alpine:3.22
+  variables:
+    GIT_STRATEGY: none # clones main itself below, whatever ref the pipeline ran on
+    MIRROR_URL: git@github.com:loginid1/loginid-aigw-cli.git
+    # From `gh api meta --jq .ssh_keys`, pinned rather than trusted on first use.
+    GITHUB_KNOWN_HOSTS: |
+      github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
+      github.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=
+  rules:
+    - if: $MIRROR_SYNC == "true"
+  before_script:
+    - apk add --no-cache git openssh-client
+    - install -d -m 700 ~/.ssh
+    - echo "$GITHUB_MIRROR_SSH_KEY_B64" | base64 -d > ~/.ssh/mirror_key && chmod 600 ~/.ssh/mirror_key
+    - printf '%s' "$GITHUB_KNOWN_HOSTS" > ~/.ssh/known_hosts
+    - export GIT_SSH_COMMAND="ssh -i ~/.ssh/mirror_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+  script:
+    - git clone --bare --single-branch --branch main "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" src.git
+    - echo "pushing main at $(git -C src.git rev-parse main)"
+    - git -C src.git push "$MIRROR_URL" main:main
