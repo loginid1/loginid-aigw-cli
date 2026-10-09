@@ -20,9 +20,9 @@ type rawSpec map[string]any
 // schemaKeys are the JSON Schema keywords an MCP input schema keeps. Examples
 // are dropped: they are long, and every tool's schema is sent to the model.
 var schemaKeys = []string{
-	"type", "description", "enum", "items", "properties", "required", "default",
+	"type", "description", "enum", kItems, kProperties, "required", "default",
 	"format", "minimum", "maximum", "minLength", "maxLength", "pattern",
-	"minItems", "maxItems", "additionalProperties",
+	"minItems", "maxItems", kAdditionalProperties,
 }
 
 func loadRawSpec(path string) (rawSpec, error) {
@@ -98,7 +98,7 @@ func (r rawSpec) inline(node any, depth int) (any, error) {
 				continue
 			}
 
-			if k == "properties" {
+			if k == kProperties {
 				props, _ := v.(map[string]any)
 				inlined := map[string]any{}
 
@@ -127,9 +127,9 @@ func (r rawSpec) inline(node any, depth int) (any, error) {
 		// Closed objects all the way down, not just at the top: otherwise a
 		// typo inside a nested object ("exchange", "scopes[]") would pass
 		// the MCP tool's input check and be sent.
-		if _, hasProps := out["properties"]; hasProps {
-			if _, set := out["additionalProperties"]; !set {
-				out["additionalProperties"] = false
+		if _, hasProps := out[kProperties]; hasProps {
+			if _, set := out[kAdditionalProperties]; !set {
+				out[kAdditionalProperties] = false
 			}
 		}
 
@@ -171,15 +171,15 @@ func (r rawSpec) inputSchema(path, method string) (string, error) {
 		pm, _ := p.(map[string]any)
 
 		in, _ := pm["in"].(string)
-		if in != "path" && in != "query" {
+		if in != inPath && in != inQuery {
 			continue
 		}
 
 		name, _ := pm["name"].(string)
 
-		s, err := r.inline(pm["schema"], 0)
-		if err != nil {
-			return "", fmt.Errorf("parameter %s: %w", name, err)
+		s, inlineErr := r.inline(pm["schema"], 0)
+		if inlineErr != nil {
+			return "", fmt.Errorf("parameter %s: %w", name, inlineErr)
 		}
 
 		sm, _ := s.(map[string]any)
@@ -189,7 +189,7 @@ func (r rawSpec) inputSchema(path, method string) (string, error) {
 
 		props[name] = sm
 
-		if req, _ := pm["required"].(bool); req || in == "path" {
+		if req, _ := pm["required"].(bool); req || in == inPath {
 			required = append(required, name)
 		}
 	}
@@ -198,13 +198,13 @@ func (r rawSpec) inputSchema(path, method string) (string, error) {
 		content, _ := rb["content"].(map[string]any)
 		media, _ := content["application/json"].(map[string]any)
 
-		body, err := r.inline(media["schema"], 0)
-		if err != nil {
-			return "", fmt.Errorf("request body: %w", err)
+		body, inlineErr := r.inline(media["schema"], 0)
+		if inlineErr != nil {
+			return "", fmt.Errorf("request body: %w", inlineErr)
 		}
 
 		bm, _ := body.(map[string]any)
-		bodyProps, _ := bm["properties"].(map[string]any)
+		bodyProps, _ := bm[kProperties].(map[string]any)
 
 		for name, p := range bodyProps {
 			if _, clash := props[name]; clash {
@@ -215,13 +215,11 @@ func (r rawSpec) inputSchema(path, method string) (string, error) {
 		}
 
 		if bodyRequired, _ := rb["required"].(bool); bodyRequired {
-			for _, name := range anyStrings(bm["required"]) {
-				required = append(required, name)
-			}
+			required = append(required, anyStrings(bm["required"])...)
 		}
 	}
 
-	schema := map[string]any{"type": "object", "properties": props, "additionalProperties": false}
+	schema := map[string]any{"type": tObject, kProperties: props, kAdditionalProperties: false}
 
 	if len(required) > 0 {
 		slices.Sort(required)
@@ -275,7 +273,7 @@ func (r rawSpec) returnsSecret(path, method string) (bool, error) {
 
 // secretSuffixes end the names of fields that hold credentials. Suffixes,
 // not substrings: "tokenEndpoint" and "subjectTokenType" are not secrets.
-var secretSuffixes = []string{"secret", "secrets", "token", "tokens", "password", "privatekey", "apikey", "credential", "credentials"}
+var secretSuffixes = []string{"secret", "secrets", token, "tokens", password, "privatekey", "apikey", "credential", "credentials"}
 
 func hasSecretField(node any) bool {
 	m, ok := node.(map[string]any)
@@ -283,10 +281,10 @@ func hasSecretField(node any) bool {
 		return false
 	}
 
-	props, _ := m["properties"].(map[string]any)
+	props, _ := m[kProperties].(map[string]any)
 	for name, p := range props {
 		pm, _ := p.(map[string]any)
-		if (isSecretName(name) && holdsText(p)) || pm["format"] == "password" {
+		if (isSecretName(name) && holdsText(p)) || pm["format"] == password {
 			return true
 		}
 
@@ -295,7 +293,7 @@ func hasSecretField(node any) bool {
 		}
 	}
 
-	return hasSecretField(m["items"]) || hasSecretField(m["additionalProperties"])
+	return hasSecretField(m[kItems]) || hasSecretField(m[kAdditionalProperties])
 }
 
 func isSecretName(name string) bool {
@@ -314,20 +312,20 @@ func isSecretName(name string) bool {
 // hasClientSecret.
 func holdsText(node any) bool {
 	m, _ := node.(map[string]any)
-	if m["format"] == "password" {
+	if m["format"] == password {
 		return true
 	}
 
 	switch t := m["type"].(type) {
 	case string:
-		if t == "array" {
-			return holdsText(m["items"])
+		if t == tArray {
+			return holdsText(m[kItems])
 		}
 
-		return t == "string"
+		return t == tString
 	case []any:
 		for _, v := range t {
-			if v == "string" {
+			if v == tString {
 				return true
 			}
 		}

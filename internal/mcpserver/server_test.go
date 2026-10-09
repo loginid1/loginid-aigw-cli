@@ -191,6 +191,17 @@ func TestAnnotations(t *testing.T) {
 			if a.DestructiveHint == nil || *a.DestructiveHint {
 				t.Errorf("projects_update (PATCH) marked destructive: %+v", a)
 			}
+		case "resources_update":
+			// A PATCH that replaces nested objects whole can wipe fields.
+			if a.DestructiveHint != nil || !strings.Contains(tool.Description, "replaces the stored one whole") {
+				t.Errorf("resources_update not marked destructive, or no warning: %+v", a)
+			}
+		}
+
+		// Reads and the idempotent writes, PUT and DELETE, can be repeated.
+		wantIdempotent := !strings.HasSuffix(tool.Name, "_create") && !strings.HasSuffix(tool.Name, "_update")
+		if a.IdempotentHint != wantIdempotent {
+			t.Errorf("%s: idempotent hint %v", tool.Name, a.IdempotentHint)
 		}
 
 		if !strings.Contains(tool.Description, "Requires API key scope: project:") {

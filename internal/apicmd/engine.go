@@ -16,9 +16,9 @@ import (
 	"unicode"
 
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 
 	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/client"
+	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/prompt"
 )
 
 // Flag names every operation command shares. The generator refuses a spec whose
@@ -119,7 +119,8 @@ func ensureGroups(root *cobra.Command, path []string) *cobra.Command {
 			next = &cobra.Command{
 				Use:   name,
 				Short: "Manage " + strings.ReplaceAll(name, "-", " "),
-				Args:  cobra.NoArgs,
+				Args:  cobra.ArbitraryArgs,
+				RunE:  groupRunE,
 			}
 			if depth == 0 {
 				pf := next.PersistentFlags()
@@ -133,6 +134,27 @@ func ensureGroups(root *cobra.Command, path []string) *cobra.Command {
 	}
 
 	return cur
+}
+
+// groupRunE runs for a noun such as `aigw projects`. With no arguments it
+// shows the noun's help. With one, the word was not a subcommand: that is an
+// error, so a typo in a script fails instead of printing help and exiting 0.
+func groupRunE(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return cmd.Help()
+	}
+
+	// Cobra applies its default distance only on the root's own lookup.
+	if cmd.SuggestionsMinimumDistance <= 0 {
+		cmd.SuggestionsMinimumDistance = 2
+	}
+
+	msg := fmt.Sprintf("unknown command %q for %q", args[0], cmd.CommandPath())
+	if suggestions := cmd.SuggestionsFor(args[0]); len(suggestions) > 0 {
+		msg += "; did you mean " + strings.Join(suggestions, " or ") + "?"
+	}
+
+	return errors.New(msg)
 }
 
 func findChild(cmd *cobra.Command, name string) *cobra.Command {
@@ -155,6 +177,10 @@ func newOperationCommand(op *Operation, target func() (Target, error)) *cobra.Co
 	}
 
 	long := op.Long
+	if op.ReplacesNested() {
+		long += "\n\n" + NestedReplaceNote
+	}
+
 	if op.Scope != "" {
 		long += "\n\nRequires scope: " + op.Scope
 	}
@@ -468,8 +494,8 @@ func confirmDelete(cmd *cobra.Command, op *Operation, args []string) error {
 	}
 
 	in, ok := cmd.InOrStdin().(*os.File)
-	if !ok || !isTerminal(in) {
-		return fmt.Errorf("refusing to run %q without --%s when input is not a terminal", target, flagConfirm)
+	if !ok || !prompt.IsTerminal(in) {
+		return fmt.Errorf("refusing to run %q without --%s when input is not a terminal%s", target, flagConfirm, prompt.NotTerminalHint())
 	}
 
 	fmt.Fprintf(cmd.ErrOrStderr(), "This runs %q and cannot be undone. Continue? [y/N] ", target)
@@ -480,12 +506,6 @@ func confirmDelete(cmd *cobra.Command, op *Operation, args []string) error {
 	}
 
 	return nil
-}
-
-// isTerminal asks the OS whether f is a terminal. A character-device check is
-// not enough: /dev/null is one too, and would get a prompt nobody can answer.
-func isTerminal(f *os.File) bool {
-	return term.IsTerminal(int(f.Fd()))
 }
 
 // printJSON writes an indented copy of body. A body that is empty, as on a 204,

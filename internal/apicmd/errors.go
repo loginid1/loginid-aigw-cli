@@ -32,12 +32,16 @@ func exitError(err error) error {
 			"not logged in: run `aigw login`, pass --%s, or set %s", flagAPIKey, client.EnvAPIKey)}
 	}
 
+	if errors.Is(err, client.ErrBadKey) {
+		return &ExitError{Code: ExitNotAuthenticated, Err: err}
+	}
+
 	var apiErr *client.APIError
 	if errors.As(err, &apiErr) {
-		switch apiErr.Status {
-		case http.StatusUnauthorized:
+		switch {
+		case apiErr.Status == http.StatusUnauthorized:
 			return &ExitError{Code: ExitNotAuthenticated, Err: err}
-		case http.StatusForbidden:
+		case apiErr.MissingScope():
 			return &ExitError{Code: ExitMissingScope, Err: err}
 		}
 	}

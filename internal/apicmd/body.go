@@ -70,7 +70,34 @@ func splitKey(key string) ([]string, error) {
 		rest = after[1:]
 	}
 
+	// Field names never hold a dot. "exchange.audience" would otherwise pass
+	// the unknown-field check and reach the API as a field literally named
+	// "exchange.audience", while the real exchange.audience kept its value.
+	for _, seg := range segs {
+		if strings.Contains(seg, ".") {
+			return nil, fmt.Errorf("%q: nest fields with brackets, e.g. %q", key, dotToBrackets(key))
+		}
+	}
+
 	return segs, nil
+}
+
+// dotToBrackets suggests the bracket form of a dotted key: "a.b[0].c" becomes
+// "a[b][0][c]".
+func dotToBrackets(key string) string {
+	parts := strings.Split(strings.ReplaceAll(strings.ReplaceAll(key, "[", "."), "]", ""), ".")
+
+	var b strings.Builder
+
+	b.WriteString(parts[0])
+
+	for _, p := range parts[1:] {
+		if p != "" {
+			b.WriteString("[" + p + "]")
+		}
+	}
+
+	return b.String()
 }
 
 // normalize turns ["scopes", "0", "value"] into "scopes[].value", the form the

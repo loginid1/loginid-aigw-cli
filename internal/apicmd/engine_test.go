@@ -139,7 +139,9 @@ func TestPositionalIDIsTheLastPathSegment(t *testing.T) {
 // Not parallel: it clears AIGW_API_KEY, so a key in the developer's shell
 // cannot turn the "no key" case into a real request.
 func TestExitCodes(t *testing.T) {
-	forbidden, _ := serve(t, http.StatusForbidden, `{"msg":"Forbidden","msgCode":"forbidden"}`)
+	// The backend's own wording for each kind of 403.
+	forbidden, _ := serve(t, http.StatusForbidden, `{"msg":"api key is missing a required scope","msgCode":"forbidden"}`)
+	wrongRole, _ := serve(t, http.StatusForbidden, `{"msg":"insufficient project role","msgCode":"forbidden"}`)
 	unauthorized, _ := serve(t, http.StatusUnauthorized, `{"msg":"Unauthorized","msgCode":"unauthorized"}`)
 	notFound, _ := serve(t, http.StatusNotFound, `{"msg":"Not found","msgCode":"not_found"}`)
 
@@ -153,6 +155,8 @@ func TestExitCodes(t *testing.T) {
 		{"no key", forbidden.URL, []string{projects, "list"}, apicmd.ExitNotAuthenticated, "not logged in"},
 		{"401", unauthorized.URL, []string{projects, "list", apiKey, "k"}, apicmd.ExitNotAuthenticated, "HTTP 401"},
 		{"403 names the scope", forbidden.URL, []string{projects, "create", "--name", "x", apiKey, "k"}, apicmd.ExitMissingScope, "project:write"},
+		// A 403 for a role is not a scope problem: no exit 4, no scope hint.
+		{"403 for a role", wrongRole.URL, []string{projects, "create", "--name", "x", apiKey, "k"}, 0, "insufficient project role"},
 		{"404", notFound.URL, []string{projects, "get", "p1", apiKey, "k"}, 0, "not_found: Not found"},
 	}
 
@@ -178,6 +182,10 @@ func TestExitCodes(t *testing.T) {
 
 			if err == nil || !strings.Contains(err.Error(), tc.contains) {
 				t.Errorf("error %v does not mention %q", err, tc.contains)
+			}
+
+			if tc.code != apicmd.ExitMissingScope && err != nil && strings.Contains(err.Error(), "requires scope") {
+				t.Errorf("error %v names a scope", err)
 			}
 		})
 	}
@@ -221,6 +229,7 @@ func TestDataRejectsBadInput(t *testing.T) {
 		"huge index":    "scopes[300000000][value]=x",
 		"index alias":   "scopes[00][value]=x",
 		"bad enum":      "kind=BOGUS",
+		"dotted key":    "exchange.audience=x",
 	}
 
 	for name, d := range cases {
@@ -370,5 +379,35 @@ func TestDeleteRefusesDevNull(t *testing.T) {
 
 	if got.method != "" {
 		t.Error("a request was sent")
+	}
+}
+
+// A typo in a subcommand fails, instead of printing help and exiting 0.
+func TestUnknownSubcommandFails(t *testing.T) {
+	t.Parallel()
+
+	_, err := runAigw(t, "http://unused.invalid", projects, "lsit")
+	if err == nil || !strings.Contains(err.Error(), `unknown command "lsit"`) || !strings.Contains(err.Error(), "did you mean list") {
+		t.Errorf("projects lsit: %v", err)
+	}
+
+	_, err = runAigw(t, "http://unused.invalid", projects)
+	if err != nil {
+		t.Errorf("a bare noun should show its help: %v", err)
+	}
+}
+
+func TestNonJSONBodyIsMadeSafe(t *testing.T) {
+	t.Parallel()
+
+	srv, _ := serve(t, http.StatusOK, "plain \x1b[31mred\x07 text")
+
+	out, err := runAigw(t, srv.URL, projects, "list", apiKey, "k")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.ContainsAny(out, "\x1b\x07") || !strings.Contains(out, "plain [31mred text") {
+		t.Errorf("output %q", out)
 	}
 }

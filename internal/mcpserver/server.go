@@ -79,6 +79,10 @@ func tool(op *apicmd.Operation) *mcp.Tool {
 		desc = op.Short
 	}
 
+	if op.ReplacesNested() {
+		desc += "\n\n" + apicmd.NestedReplaceNote
+	}
+
 	desc += "\n\nRequires API key scope: " + op.Scope + "."
 
 	notDestructive, closedWorld := false, false
@@ -91,7 +95,9 @@ func tool(op *apicmd.Operation) *mcp.Tool {
 		IdempotentHint: op.Method == http.MethodGet || op.Method == http.MethodPut || op.Method == http.MethodDelete,
 	}
 
-	if op.Method == http.MethodPost || op.Method == http.MethodPatch {
+	// A PATCH that replaces nested objects whole can wipe fields, so it keeps
+	// the default destructive hint, like PUT and DELETE.
+	if op.Method == http.MethodPost || (op.Method == http.MethodPatch && !op.ReplacesNested()) {
 		annotations.DestructiveHint = &notDestructive
 	}
 
@@ -178,6 +184,13 @@ func handler(op *apicmd.Operation, schema *jsonschema.Resolved, opts Options) mc
 		}
 
 		body, err := client.New(opts.BaseURL, key).Do(ctx, apiReq)
+
+		// The client canceled the call (an MCP cancel notification): it expects
+		// no result, so return the context's error rather than a tool result.
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return nil, ctx.Err()
+		}
+
 		if err != nil {
 			// A tool error, not a protocol error, so the model sees what went
 			// wrong and can correct its arguments.

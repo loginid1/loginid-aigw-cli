@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/zalando/go-keyring"
 
@@ -182,7 +183,8 @@ func TestDeleteRecoversFromAnUnreadableConfig(t *testing.T) {
 	}
 
 	deleted, err := credentials.Delete(dir, config.DefaultProfile)
-	if err != nil || !deleted.Removed || deleted.MovedTo != filepath.Join(dir, "config.toml.broken") {
+	if err != nil || !deleted.Removed || len(deleted.MovedAside) != 1 ||
+		!strings.HasPrefix(deleted.MovedAside[0], filepath.Join(dir, "config.toml.broken-")) {
 		t.Fatalf("Delete = %+v, %v", deleted, err)
 	}
 
@@ -195,5 +197,128 @@ func TestDeleteRecoversFromAnUnreadableConfig(t *testing.T) {
 	_, err = credentials.Save(dir, config.DefaultProfile, key, false)
 	if err != nil {
 		t.Errorf("login after the reset: %v", err)
+	}
+}
+
+// Not parallel: keyring.MockInit swaps a package-level store.
+func TestResetCoversEveryBrokenState(t *testing.T) {
+	cases := []struct {
+		name       string
+		config     string
+		configDir  bool   // a directory where config.toml should be
+		creds      string // credentials.toml content, if any
+		noKeyring  bool   // a machine with no usable keyring
+		wantMoved  int
+		wantWarned bool
+	}{
+		{name: "valid TOML, wrong shape", config: "default = 5\n", wantMoved: 1},
+		{name: "a directory, not a file", configDir: true, wantMoved: 1},
+		{name: "no keyring on the machine", config: "[default\n", noKeyring: true, wantMoved: 1, wantWarned: true},
+		{name: "both files broken", config: "[default\n", creds: "[[[", wantMoved: 2},
+	}
+
+	for _, tc := range cases {
+		if tc.noKeyring {
+			keyring.MockInitWithError(errors.New("no secret service"))
+		} else {
+			keyring.MockInit()
+		}
+
+		dir := t.TempDir()
+		cfgPath := filepath.Join(dir, "config.toml")
+
+		var err error
+		if tc.configDir {
+			err = os.Mkdir(cfgPath, 0o700)
+		} else {
+			err = os.WriteFile(cfgPath, []byte(tc.config), 0o600)
+		}
+
+		if err == nil && tc.creds != "" {
+			err = os.WriteFile(filepath.Join(dir, "credentials.toml"), []byte(tc.creds), 0o600)
+		}
+
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		deleted, err := credentials.Delete(dir, config.DefaultProfile)
+		if err != nil || !deleted.Removed || len(deleted.MovedAside) != tc.wantMoved || (len(deleted.Warnings) > 0) != tc.wantWarned {
+			t.Errorf("%s: Delete = %+v, %v", tc.name, deleted, err)
+
+			continue
+		}
+
+		// Afterwards a login works again.
+		_, err = credentials.Save(dir, config.DefaultProfile, key, true)
+		if err != nil {
+			t.Errorf("%s: login after the reset: %v", tc.name, err)
+		}
+	}
+}
+
+func TestMoveAsideKeepsEarlierCopies(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	seen := map[string]bool{}
+
+	for range 2 {
+		err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("x"), 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		moved, err := config.MoveAside(dir, "config.toml")
+		if err != nil || moved == "" || seen[moved] {
+			t.Fatalf("MoveAside = %q, %v (earlier: %v)", moved, err, seen)
+		}
+
+		seen[moved] = true
+
+		time.Sleep(2 * time.Millisecond) // names carry milliseconds
+	}
+}
+
+// Not parallel: keyring.MockInit swaps a package-level store.
+func TestStorageSwitchFailures(t *testing.T) {
+	// The old key cannot be removed: say so, but keep the new one.
+	keyring.MockInit()
+
+	dir := t.TempDir()
+
+	_, err := credentials.Save(dir, config.DefaultProfile, key, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	keyring.MockInitWithError(errors.New("keyring locked"))
+
+	_, err = credentials.Save(dir, config.DefaultProfile, key, true)
+	if err == nil || !strings.Contains(err.Error(), "old one is still") {
+		t.Errorf("an undeletable old key was not reported: %v", err)
+	}
+
+	got, err := credentials.Load(dir, config.DefaultProfile)
+	if err != nil || got != key {
+		t.Errorf("the new key was lost: %q, %v", got, err)
+	}
+
+	// The new store refuses the key: the old one must still work.
+	dir = t.TempDir()
+
+	_, err = credentials.Save(dir, config.DefaultProfile, key, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = credentials.Save(dir, config.DefaultProfile, "aigw_sk_replacement123", false)
+	if err == nil {
+		t.Fatal("saving to a failing keyring succeeded")
+	}
+
+	got, err = credentials.Load(dir, config.DefaultProfile)
+	if err != nil || got != key {
+		t.Errorf("a failed switch lost the old key: %q, %v", got, err)
 	}
 }

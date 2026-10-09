@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/client"
 )
@@ -213,5 +214,55 @@ func TestResponseSizeIsBounded(t *testing.T) {
 	_, err := client.New(srv.URL, "k").Do(t.Context(), &client.Request{Method: http.MethodGet, Path: "/projects"})
 	if err == nil || !strings.Contains(err.Error(), "larger than 10 MiB") {
 		t.Errorf("an 11 MiB response: %v", err)
+	}
+}
+
+func TestWriteTimeoutSaysOutcomeUnknown(t *testing.T) {
+	t.Parallel()
+
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
+
+	t.Cleanup(func() { close(release); srv.Close() })
+
+	for method, wantUnknown := range map[string]bool{http.MethodGet: false, http.MethodPost: true, http.MethodDelete: true} {
+		c := client.New(srv.URL, "k")
+		c.HTTP.Timeout = 50 * time.Millisecond
+
+		_, err := c.Do(t.Context(), &client.Request{Method: method, Path: "/projects"})
+		if err == nil || errors.Is(err, client.ErrOutcomeUnknown) != wantUnknown {
+			t.Errorf("%s timeout: %v, want outcome-unknown=%v", method, err, wantUnknown)
+		}
+	}
+}
+
+func TestPlainHTTPUsesNoProxy(t *testing.T) {
+	t.Parallel()
+
+	tr, ok := client.New("http://127.0.0.1:1", "k").HTTP.Transport.(*http.Transport)
+	if !ok || tr.Proxy != nil {
+		t.Errorf("plain-http transport %T, proxy set: %v", client.New("http://127.0.0.1:1", "k").HTTP.Transport, ok && tr.Proxy != nil)
+	}
+}
+
+// Not parallel: it sets env vars.
+func TestKeysFromEnvAndFlagsAreCleaned(t *testing.T) {
+	t.Setenv("AIGW_API_KEY", "aigw_sk_abc\r\n") // read from a Windows file
+
+	got, err := client.ResolveAPIKey("", false)
+	if err != nil || got != "aigw_sk_abc" {
+		t.Errorf("trailing CRLF: %q, %v", got, err)
+	}
+
+	t.Setenv("AIGW_API_KEY", "aigw_sk_a b")
+
+	_, err = client.ResolveAPIKey("", false)
+	if !errors.Is(err, client.ErrBadKey) || !strings.Contains(err.Error(), "AIGW_API_KEY") {
+		t.Errorf("a key with a space: %v", err)
+	}
+
+	_, err = client.ResolveAPIKey("aigw_sk_\x01", false)
+	if !errors.Is(err, client.ErrBadKey) || !strings.Contains(err.Error(), "--api-key") {
+		t.Errorf("a flag key with a control character: %v", err)
 	}
 }

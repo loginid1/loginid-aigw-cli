@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -56,7 +57,7 @@ func Dir() (string, error) {
 	return filepath.Join(home, ".config", "aigw"), nil
 }
 
-func path(dir string) string { return filepath.Join(dir, "config.toml") }
+func path(dir string) string { return filepath.Join(dir, FileName) }
 
 // Load reads the config in dir. A missing file is an empty config.
 func Load(dir string) (Config, error) {
@@ -67,34 +68,44 @@ func Load(dir string) (Config, error) {
 		return cfg, nil
 	}
 
-	var parseErr toml.ParseError
-	if errors.As(err, &parseErr) {
-		return nil, fmt.Errorf("%w: %s: %w; run `aigw logout` to reset it", ErrUnreadable, path(dir), err)
+	// Permission is the user's to fix. Anything else (not TOML, the wrong
+	// shape, a directory where the file should be) logout can reset.
+	if errors.Is(err, fs.ErrPermission) {
+		return nil, fmt.Errorf("read %s: %w", path(dir), err)
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path(dir), err)
+		return nil, fmt.Errorf("%w: %s: %w; run `aigw logout` to reset it", ErrUnreadable, path(dir), err)
 	}
 
 	return cfg, nil
 }
 
-// ErrUnreadable means config.toml exists but is not valid TOML.
+// ErrUnreadable means config.toml exists but cannot be used.
 var ErrUnreadable = errors.New("config file is unreadable")
 
-// MoveAside renames an unreadable config.toml to config.toml.broken, so the
-// next write starts clean while the old content stays for a look. It returns
-// the new path.
-func MoveAside(dir string) (string, error) {
-	dest := path(dir) + ".broken"
+// MoveAside renames file in dir to file.broken-<time>, so the next write
+// starts clean while the old content stays for a look. The time keeps an
+// earlier broken copy from being overwritten. It returns the new path, or ""
+// when there was no file.
+func MoveAside(dir, file string) (string, error) {
+	src := filepath.Join(dir, file)
+	dest := src + ".broken-" + time.Now().Format("20060102-150405.000")
 
-	err := os.Rename(path(dir), dest)
+	err := os.Rename(src, dest)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+
 	if err != nil {
-		return "", fmt.Errorf("move %s aside: %w", path(dir), err)
+		return "", fmt.Errorf("move %s aside: %w", src, err)
 	}
 
 	return dest, nil
 }
+
+// FileName is config.toml's name inside Dir.
+const FileName = "config.toml"
 
 // Save writes cfg to dir, replacing the file in one step so a crash cannot
 // leave half a config behind.

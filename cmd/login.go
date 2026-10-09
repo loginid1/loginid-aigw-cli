@@ -12,6 +12,7 @@ import (
 
 	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/config"
 	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/credentials"
+	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/prompt"
 )
 
 // maxKeyBytes bounds what --with-key-stdin reads, so a wrong pipe cannot fill
@@ -95,10 +96,11 @@ func newLoginCommand() *cobra.Command {
 func confirmReplace(cmd *cobra.Command, hint string, fromStdin bool) error {
 	refuse := fmt.Errorf("a key (%s) is already saved: pass --confirm to replace it, or run `aigw logout` first", hint)
 
-	f, isFile := cmd.InOrStdin().(*os.File)
-	if fromStdin || !isFile || !term.IsTerminal(int(f.Fd())) {
-		return refuse
+	if fromStdin || !prompt.IsTerminal(cmd.InOrStdin()) {
+		return fmt.Errorf("%w%s", refuse, prompt.NotTerminalHint())
 	}
+
+	f, _ := cmd.InOrStdin().(*os.File)
 
 	fmt.Fprintf(cmd.ErrOrStderr(), "A key (%s) is already saved. Replace it? [y/N] ", hint)
 
@@ -159,7 +161,7 @@ func readKey(cmd *cobra.Command, fromStdin bool) (string, error) {
 		}
 
 		raw = b
-	case isFile && term.IsTerminal(int(f.Fd())):
+	case isFile && prompt.IsTerminal(f):
 		fmt.Fprint(cmd.ErrOrStderr(), "Paste your API key (input is hidden): ")
 
 		b, err := term.ReadPassword(int(f.Fd()))
@@ -172,6 +174,10 @@ func readKey(cmd *cobra.Command, fromStdin bool) (string, error) {
 
 		raw = b
 	default:
+		if hint := prompt.NotTerminalHint(); hint != "" {
+			return "", errors.New("input is not a terminal" + hint)
+		}
+
 		return "", errors.New("input is not a terminal: pass --with-key-stdin to read the key from a pipe")
 	}
 
@@ -180,14 +186,9 @@ func readKey(cmd *cobra.Command, fromStdin bool) (string, error) {
 		return "", errors.New("no API key given")
 	}
 
-	// Printable ASCII only. A control character would break the Authorization
-	// header on every later request, and a multi-byte character would be cut
-	// in half by the hint written to config.toml, leaving a file that neither
-	// login nor logout can read.
-	for _, r := range key {
-		if r < 0x21 || r > 0x7e {
-			return "", fmt.Errorf("the API key may only contain printable ASCII characters, with no spaces; found %q", r)
-		}
+	err := credentials.CheckKey(key)
+	if err != nil {
+		return "", err
 	}
 
 	return key, nil
@@ -209,8 +210,12 @@ func newLogoutCommand() *cobra.Command {
 				return err
 			}
 
-			if deleted.MovedTo != "" {
-				fmt.Fprintf(cmd.ErrOrStderr(), "The config file could not be read; moved it to %s.\n", deleted.MovedTo)
+			for _, w := range deleted.Warnings {
+				fmt.Fprintln(cmd.ErrOrStderr(), "warning:", w)
+			}
+
+			for _, moved := range deleted.MovedAside {
+				fmt.Fprintf(cmd.ErrOrStderr(), "Could not read a file; moved it to %s.\n", moved)
 			}
 
 			if deleted.Removed {

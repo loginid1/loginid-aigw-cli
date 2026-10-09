@@ -1,5 +1,10 @@
 version: "2"
 
+run:
+  # The generator sits behind this tag; without it, it is never linted.
+  build-tags:
+    - gen_commands
+
 output:
   formats:
     text:
@@ -54,7 +59,7 @@ linters:
             - $all
             - '!$test'
             - '!**/test/**/*.go'
-            - '!**/*_a _file.go'
+            - '!**/internal/gen/**'
           allow:
             # Kept deliberately short. depguard is a supply-chain control: every
             # new dependency is an explicit decision, recorded here, on a binary
@@ -80,6 +85,15 @@ linters:
               desc: use log/sslog instead
             - pkg: io/ioutil
               desc: 'replaced by io and os packages since Go 1.16: https://tip.golang.org/doc/go1.16#ioutil'
+        # The generator runs at `make generate` time and never ships in the
+        # binary, so it may also read YAML.
+        generator:
+          files:
+            - '**/internal/gen/**'
+          allow:
+            - $gostd
+            - go/format
+            - go.yaml.in/yaml/v3
         tests:
           list-mode: lax
           files:
@@ -128,6 +142,10 @@ linters:
       - builtin$
       - examples$
     rules:
+      # JSON Schema words ("type", "object", ...) repeat by nature here.
+      - path: internal/gen/
+        linters:
+          - goconst
       - path: (.+)_test\.go
         linters:
           - dupl

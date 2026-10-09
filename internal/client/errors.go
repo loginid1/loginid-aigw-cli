@@ -23,12 +23,24 @@ type APIError struct {
 
 func (e *APIError) Error() string {
 	s := fmt.Sprintf("%s %s: HTTP %d: %s", e.Method, e.Path, e.Status, e.Message)
-	if e.Status == http.StatusForbidden && e.Scope != "" {
+	if e.MissingScope() && e.Scope != "" {
 		s += " (requires scope " + e.Scope + ")"
 	}
 
 	return s
 }
+
+// MissingScope reports whether the API refused the key for lacking a scope.
+// Not every 403 means that: the API also answers 403 for a project role that
+// is too low, or a project of the wrong type, and naming a scope there would
+// send the user to the wrong fix.
+func (e *APIError) MissingScope() bool {
+	return e.Status == http.StatusForbidden && strings.Contains(e.Message, missingScopeMessage)
+}
+
+// missingScopeMessage is how the devcon API words a scope refusal
+// (loginid-aigw internal/api/rest/devcon/impl/auth.go).
+const missingScopeMessage = "missing a required scope"
 
 // errorBody reads both error shapes the API sends. Its own handlers answer
 // with an AppError (msg, msgCode). Goa, which validates requests before any

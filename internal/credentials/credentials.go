@@ -122,29 +122,23 @@ func Load(dir, profile string) (string, error) {
 type Deleted struct {
 	// Removed is false when there was nothing to remove.
 	Removed bool
-	// MovedTo is where an unreadable config.toml was moved, if it was.
-	MovedTo string
+	// MovedAside lists files that could not be read and were renamed.
+	MovedAside []string
+	// Warnings are problems that did not stop the reset.
+	Warnings []string
 }
 
 // Delete removes profile's key and its config entry.
 //
-// An unreadable config.toml does not stop it: it removes the profile's key
-// from both the keyring and the file store, since it cannot tell which one was
-// used, then moves the config aside.
+// An unreadable config.toml does not stop it, because login itself tells the
+// user to run logout then. It removes the profile's key from both stores,
+// since it cannot tell which one was used; a keyring that is missing or fails
+// is only a warning, as on a server with no Secret Service; an unreadable
+// credentials file is moved aside like the config.
 func Delete(dir, profile string) (Deleted, error) {
 	cfg, err := config.Load(dir)
 	if errors.Is(err, config.ErrUnreadable) {
-		err = errors.Join(deleteKey(dir, profile, config.StorageKeyring), deleteKey(dir, profile, config.StorageFile))
-		if err != nil {
-			return Deleted{}, err
-		}
-
-		movedTo, moveErr := config.MoveAside(dir)
-		if moveErr != nil {
-			return Deleted{}, moveErr
-		}
-
-		return Deleted{Removed: true, MovedTo: movedTo}, nil
+		return reset(dir, profile)
 	}
 
 	if err != nil {
@@ -166,6 +160,40 @@ func Delete(dir, profile string) (Deleted, error) {
 	return Deleted{Removed: true}, config.Save(dir, cfg)
 }
 
+func reset(dir, profile string) (Deleted, error) {
+	var d Deleted
+
+	err := deleteKey(dir, profile, config.StorageKeyring)
+	if err != nil {
+		d.Warnings = append(d.Warnings, err.Error())
+	}
+
+	err = deleteFileKey(dir, profile)
+	if err != nil {
+		moved, moveErr := config.MoveAside(dir, credentialsFile)
+		if moveErr != nil {
+			return d, moveErr
+		}
+
+		if moved != "" {
+			d.MovedAside = append(d.MovedAside, moved)
+		}
+	}
+
+	moved, err := config.MoveAside(dir, config.FileName)
+	if err != nil {
+		return d, err
+	}
+
+	if moved != "" {
+		d.MovedAside = append(d.MovedAside, moved)
+	}
+
+	d.Removed = true
+
+	return d, nil
+}
+
 // Hint masks key for display: "aigw_sk_…Xk7Q". Every key shares the prefix,
 // so the last four characters are what tells two keys apart.
 func Hint(key string) string {
@@ -185,6 +213,23 @@ func Hint(key string) string {
 	}
 
 	return head + "…" + string(rest[len(rest)-tail:])
+}
+
+// CheckKey refuses a key that cannot work: one with a space or with anything
+// other than printable ASCII. A control character breaks the Authorization
+// header, and a multi-byte character breaks the hint written to config.toml.
+func CheckKey(key string) error {
+	if key == "" {
+		return errors.New("the API key is empty")
+	}
+
+	for _, r := range key {
+		if r < 0x21 || r > 0x7e {
+			return fmt.Errorf("the API key may only contain printable ASCII characters, with no spaces; found %q", r)
+		}
+	}
+
+	return nil
 }
 
 // LooksLikeKey reports whether key carries devcon's marker.
@@ -216,7 +261,10 @@ func storeName() string {
 
 // ---- insecure storage: a 0600 TOML file of profile = key ----
 
-func fileStorePath(dir string) string { return filepath.Join(dir, "credentials.toml") }
+// credentialsFile holds keys saved with --insecure-storage.
+const credentialsFile = "credentials.toml"
+
+func fileStorePath(dir string) string { return filepath.Join(dir, credentialsFile) }
 
 func readFileKeys(dir string) (map[string]string, error) {
 	keys := map[string]string{}

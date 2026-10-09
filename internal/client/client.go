@@ -38,6 +38,32 @@ const (
 	maxResponseBytes = 10 << 20
 )
 
+// ErrOutcomeUnknown marks a write that timed out after it was sent.
+var ErrOutcomeUnknown = errors.New("the change may or may not have been applied: check its current state before retrying")
+
+func isTimeout(err error) bool {
+	var netErr net.Error
+
+	return errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout())
+}
+
+// ErrBadKey means a key was given but cannot work; the error names its source.
+var ErrBadKey = errors.New("unusable API key")
+
+// checked trims a key from the command line or the environment, where a
+// Windows file read with $(cat key.txt) leaves a trailing \r, and refuses one
+// login would refuse, naming where it came from.
+func checked(key, source string) (string, error) {
+	key = strings.TrimSpace(key)
+
+	err := credentials.CheckKey(key)
+	if err != nil {
+		return "", fmt.Errorf("%w from %s: %w", ErrBadKey, source, err)
+	}
+
+	return key, nil
+}
+
 // ErrNotLoggedIn means no key was given and none is saved.
 var ErrNotLoggedIn = errors.New("not logged in")
 
@@ -76,19 +102,19 @@ func New(base, apiKey string) *Client {
 // It returns ErrNotLoggedIn when there is none.
 func ResolveAPIKey(explicit string, temporaryBase bool) (string, error) {
 	if explicit != "" {
-		return explicit, nil
+		return checked(explicit, "--api-key")
 	}
 
 	if temporaryBase {
 		if v := os.Getenv(EnvTempAPIKey); v != "" {
-			return v, nil
+			return checked(v, EnvTempAPIKey)
 		}
 
 		return "", ErrNotLoggedIn
 	}
 
 	if v := os.Getenv(EnvAPIKey); v != "" {
-		return v, nil
+		return checked(v, EnvAPIKey)
 	}
 
 	dir, err := config.Dir()
@@ -153,6 +179,13 @@ func (c *Client) Do(ctx context.Context, req *Request) ([]byte, error) {
 
 	resp, err := c.HTTP.Do(httpReq)
 	if err != nil {
+		// A write that timed out may still have been applied: the server can
+		// finish after we stop waiting. Retrying blindly could create a
+		// second project or signing key.
+		if req.Method != http.MethodGet && isTimeout(err) {
+			return nil, fmt.Errorf("%s %s: %w; %w", req.Method, req.Path, err, ErrOutcomeUnknown)
+		}
+
 		return nil, fmt.Errorf("%s %s: %w", req.Method, req.Path, err)
 	}
 	defer resp.Body.Close()

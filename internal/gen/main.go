@@ -42,6 +42,7 @@ func main() {
 	overlayPath := flag.String("overlay", "api/devcon-overlay.yaml", "path to the overlay")
 	ref := flag.String("ref", "", "spec source, recorded in the output header")
 	out := flag.String("out", "internal/apicmd/operations_gen.go", "output file")
+
 	flag.Parse()
 
 	if *specPath == "" || *ref == "" {
@@ -53,7 +54,8 @@ func main() {
 		log.Fatalf("gen: %v", err)
 	}
 
-	if err := os.WriteFile(*out, src, 0o600); err != nil {
+	err = os.WriteFile(*out, src, 0o600)
+	if err != nil {
 		log.Fatalf("gen: %v", err)
 	}
 }
@@ -128,7 +130,7 @@ type outParam struct {
 }
 
 // HasFieldEnums reports whether any -d field has a fixed set of values.
-func (o outOp) HasFieldEnums() bool {
+func (o *outOp) HasFieldEnums() bool {
 	for _, f := range o.Fields {
 		if len(f.Enum) > 0 {
 			return true
@@ -144,13 +146,13 @@ type field struct {
 }
 
 func generate(specPath, overlayPath, ref string) ([]byte, error) {
-	var s spec
-	if err := readYAML(specPath, &s); err != nil {
-		return nil, err
-	}
+	var (
+		s  spec
+		ov overlay
+	)
 
-	var ov overlay
-	if err := readYAML(overlayPath, &ov); err != nil {
+	err := errors.Join(readYAML(specPath, &s), readYAML(overlayPath, &ov))
+	if err != nil {
 		return nil, err
 	}
 
@@ -178,8 +180,10 @@ func generate(specPath, overlayPath, ref string) ([]byte, error) {
 			}
 
 			var o operation
-			if err := node.Decode(&o); err != nil {
-				return nil, fmt.Errorf("%s %s: %w", method, path, err)
+
+			decodeErr := node.Decode(&o)
+			if decodeErr != nil {
+				return nil, fmt.Errorf("%s %s: %w", method, path, decodeErr)
 			}
 
 			entry, ok := ov.Operations[o.OperationID]
@@ -197,21 +201,21 @@ func generate(specPath, overlayPath, ref string) ([]byte, error) {
 
 			cmds[entry.Command] = o.OperationID
 
-			op, err := buildOp(&s, path, method, &o, entry.Command)
-			if err == nil {
-				op.InputSchema, err = raw.inputSchema(path, method)
+			op, opErr := buildOp(&s, path, method, &o, entry.Command)
+			if opErr == nil {
+				op.InputSchema, opErr = raw.inputSchema(path, method)
 			}
 
-			if err == nil {
-				op.ReturnsSecret, err = raw.returnsSecret(path, method)
+			if opErr == nil {
+				op.ReturnsSecret, opErr = raw.returnsSecret(path, method)
 			}
 
 			if entry.ReturnsSecret != nil {
 				op.ReturnsSecret = *entry.ReturnsSecret
 			}
 
-			if err != nil {
-				errs = append(errs, fmt.Errorf("%s: %w", o.OperationID, err))
+			if opErr != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", o.OperationID, opErr))
 
 				continue
 			}
@@ -226,7 +230,8 @@ func generate(specPath, overlayPath, ref string) ([]byte, error) {
 		}
 	}
 
-	if err := errors.Join(errs...); err != nil {
+	err = errors.Join(errs...)
+	if err != nil {
 		return nil, err
 	}
 
@@ -237,8 +242,10 @@ func generate(specPath, overlayPath, ref string) ([]byte, error) {
 	tpl := template.Must(template.New("gen").Funcs(template.FuncMap{"q": quote, "qs": quoteList}).Parse(tplText))
 
 	var buf bytes.Buffer
-	if err := tpl.Execute(&buf, map[string]any{"Ref": ref, "Base": s.Servers[0].URL, "Ops": ops}); err != nil {
-		return nil, err
+
+	err1 := tpl.Execute(&buf, map[string]any{"Ref": ref, "Base": s.Servers[0].URL, "Ops": ops})
+	if err1 != nil {
+		return nil, err1
 	}
 
 	src, err := format.Source(buf.Bytes())
@@ -287,27 +294,29 @@ func buildOp(s *spec, path, method string, o *operation, command string) (outOp,
 
 	for _, p := range o.Parameters {
 		switch p.In {
-		case "path":
+		case inPath:
 			// The id a path ends with is the thing the command acts on, so it
 			// is positional: `aigw resources get <resource-id>`. Parent ids
 			// before it are flags: `--project-id`.
 			if strings.HasSuffix(path, "/{"+p.Name+"}") {
-				op.Args = append(op.Args, outParam{Name: p.Name, In: "path", Type: "string", Required: true, Desc: p.Description})
+				op.Args = append(op.Args, outParam{Name: p.Name, In: inPath, Type: tString, Required: true, Desc: p.Description})
 
 				continue
 			}
 
-			if err := addFlag(outParam{Name: p.Name, Flag: kebab(p.Name), In: "path", Type: "string", Required: true, Desc: p.Description}); err != nil {
-				return outOp{}, err
+			err2 := addFlag(outParam{Name: p.Name, Flag: kebab(p.Name), In: inPath, Type: tString, Required: true, Desc: p.Description})
+			if err2 != nil {
+				return outOp{}, err2
 			}
-		case "query":
+		case inQuery:
 			typ, err := scalarType(s, p.Schema)
 			if err != nil {
 				return outOp{}, fmt.Errorf("query param %s: %w", p.Name, err)
 			}
 
-			if err := addFlag(outParam{Name: p.Name, Flag: kebab(p.Name), In: "query", Type: typ, Required: p.Required, Desc: p.Description}); err != nil {
-				return outOp{}, err
+			err3 := addFlag(outParam{Name: p.Name, Flag: kebab(p.Name), In: inQuery, Type: typ, Required: p.Required, Desc: p.Description})
+			if err3 != nil {
+				return outOp{}, err3
 			}
 		case "header":
 			// The only header is Authorization, which the engine sets.
@@ -330,8 +339,10 @@ func buildOp(s *spec, path, method string, o *operation, command string) (outOp,
 		}
 
 		var fields []field
-		if err := walkBody(s, body, "", "", body.Required, &fields, addFlag); err != nil {
-			return outOp{}, err
+
+		err4 := walkBody(s, body, "", "", body.Required, &fields, addFlag)
+		if err4 != nil {
+			return outOp{}, err4
 		}
 
 		slices.SortFunc(fields, func(a, b field) int { return strings.Compare(a.Path, b.Path) })
@@ -345,7 +356,7 @@ func buildOp(s *spec, path, method string, o *operation, command string) (outOp,
 				return outOp{}, err
 			}
 
-			if prop.Type != "array" {
+			if prop.Type != tArray {
 				continue
 			}
 
@@ -354,7 +365,7 @@ func buildOp(s *spec, path, method string, o *operation, command string) (outOp,
 				return outOp{}, err
 			}
 
-			if item.Type == "object" {
+			if item.Type == tObject {
 				op.RequiredLists = append(op.RequiredLists, name)
 			}
 		}
@@ -385,7 +396,7 @@ func walkBody(s *spec, obj *schema, apiPrefix, flagPrefix string, required []str
 		desc := firstNonEmpty(obj.Properties[name].Description, prop.Description)
 
 		switch prop.Type {
-		case "object":
+		case tObject:
 			// As in the Stripe CLI, a nested field counts as required only
 			// when every object above it is required too. "Required when the
 			// parent is sent" is the server's to check.
@@ -394,32 +405,38 @@ func walkBody(s *spec, obj *schema, apiPrefix, flagPrefix string, required []str
 				nested = prop.Required
 			}
 
-			if err := walkBody(s, prop, apiName+".", flagName+".", nested, fields, addFlag); err != nil {
-				return err
+			err5 := walkBody(s, prop, apiName+".", flagName+".", nested, fields, addFlag)
+			if err5 != nil {
+				return err5
 			}
-		case "array":
+		case tArray:
 			item, err := resolve(s, prop.Items)
 			if err != nil {
 				return fmt.Errorf("%s: %w", apiName, err)
 			}
 
-			if item.Type == "object" {
+			if item.Type == tObject {
 				// Only -d can set a list of objects.
-				if err := walkFields(s, item, apiName+"[]", fields); err != nil {
-					return err
+				err6 := walkFields(s, item, apiName+"[]", fields)
+				if err6 != nil {
+					return err6
 				}
 
 				continue
 			}
 
 			*fields = append(*fields, field{apiName + "[]", item.Type, item.Enum})
-			if err := addFlag(outParam{Name: apiName, Flag: flagName, In: "body", Type: "[]" + item.Type, Required: slices.Contains(required, name), Enum: item.Enum, Desc: desc}); err != nil {
-				return err
+
+			err7 := addFlag(outParam{Name: apiName, Flag: flagName, In: "body", Type: "[]" + item.Type, Required: slices.Contains(required, name), Enum: item.Enum, Desc: desc})
+			if err7 != nil {
+				return err7
 			}
 		default:
 			*fields = append(*fields, field{apiName, prop.Type, prop.Enum})
-			if err := addFlag(outParam{Name: apiName, Flag: flagName, In: "body", Type: prop.Type, Required: slices.Contains(required, name), Enum: prop.Enum, Desc: desc}); err != nil {
-				return err
+
+			err8 := addFlag(outParam{Name: apiName, Flag: flagName, In: "body", Type: prop.Type, Required: slices.Contains(required, name), Enum: prop.Enum, Desc: desc})
+			if err8 != nil {
+				return err8
 			}
 		}
 	}
@@ -442,19 +459,21 @@ func walkFields(s *spec, obj *schema, prefix string, fields *[]field) error {
 		path := prefix + "." + name
 
 		switch prop.Type {
-		case "object":
-			if err := walkFields(s, prop, path, fields); err != nil {
-				return err
+		case tObject:
+			err9 := walkFields(s, prop, path, fields)
+			if err9 != nil {
+				return err9
 			}
-		case "array":
+		case tArray:
 			item, err := resolve(s, prop.Items)
 			if err != nil {
 				return err
 			}
 
-			if item.Type == "object" {
-				if err := walkFields(s, item, path+"[]", fields); err != nil {
-					return err
+			if item.Type == tObject {
+				err10 := walkFields(s, item, path+"[]", fields)
+				if err10 != nil {
+					return err10
 				}
 
 				continue
@@ -495,7 +514,7 @@ func resolve(s *spec, sc *schema) (*schema, error) {
 	}
 
 	switch sc.Type {
-	case "object", "array", "string", "integer", "number", "boolean":
+	case tObject, tArray, tString, "integer", "number", "boolean":
 		return sc, nil
 	default:
 		return nil, fmt.Errorf("schema type %q not supported", sc.Type)
@@ -508,7 +527,7 @@ func scalarType(s *spec, sc *schema) (string, error) {
 		return "", err
 	}
 
-	if r.Type == "object" || r.Type == "array" {
+	if r.Type == tObject || r.Type == tArray {
 		return "", fmt.Errorf("type %s not supported here", r.Type)
 	}
 
@@ -517,9 +536,9 @@ func scalarType(s *spec, sc *schema) (string, error) {
 
 // describe picks the help text. Goa fills summary with "<method> <service>",
 // which says nothing, so the first sentence of the description is preferred.
-func describe(o *operation) (short, long string) {
-	long = strings.TrimSpace(o.Description)
-	short = long
+func describe(o *operation) (string, string) { //nolint:gocritic // short, then long; named results are banned by nonamedreturns
+	long := strings.TrimSpace(o.Description)
+	short := long
 
 	if i := strings.Index(short, ". "); i >= 0 {
 		short = short[:i]
@@ -550,8 +569,9 @@ func readYAML(path string, v any) error {
 		return err
 	}
 
-	if err := yaml.Unmarshal(raw, v); err != nil {
-		return fmt.Errorf("%s: %w", path, err)
+	err11 := yaml.Unmarshal(raw, v)
+	if err11 != nil {
+		return fmt.Errorf("%s: %w", path, err11)
 	}
 
 	return nil
