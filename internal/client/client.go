@@ -265,6 +265,10 @@ func checkPathValue(v string) error {
 	return nil
 }
 
+// lookupIPAddr resolves hostnames for loopbackOnlyTransport; a test swaps it
+// to fix the order addresses come back in.
+var lookupIPAddr = net.DefaultResolver.LookupIPAddr
+
 // loopbackOnlyTransport is for plain-http bases, which only a temporary
 // override can set. It dials only loopback addresses, whatever a hostname
 // resolves to, so a DNS answer cannot carry the key off the machine in clear
@@ -280,15 +284,30 @@ func loopbackOnlyTransport() *http.Transport {
 			return nil, err
 		}
 
-		ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+		ips, err := lookupIPAddr(ctx, host)
 		if err != nil {
 			return nil, err
 		}
 
+		// Try every loopback address, in order: "localhost" often resolves
+		// to ::1 first while the server listens only on 127.0.0.1.
+		var dialErrs []error
+
 		for _, ip := range ips {
-			if ip.IP.IsLoopback() {
-				return dialer.DialContext(ctx, network, net.JoinHostPort(ip.IP.String(), port))
+			if !ip.IP.IsLoopback() {
+				continue
 			}
+
+			conn, dialErr := dialer.DialContext(ctx, network, net.JoinHostPort(ip.IP.String(), port))
+			if dialErr == nil {
+				return conn, nil
+			}
+
+			dialErrs = append(dialErrs, dialErr)
+		}
+
+		if len(dialErrs) > 0 {
+			return nil, errors.Join(dialErrs...)
 		}
 
 		return nil, fmt.Errorf("refusing plain http to %s: it does not resolve to a loopback address", host)

@@ -1,9 +1,11 @@
 package client_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -276,5 +278,27 @@ func TestKeysFromEnvAndFlagsAreCleaned(t *testing.T) {
 	_, err = client.ResolveAPIKey("aigw_sk_\x01", false)
 	if !errors.Is(err, client.ErrBadKey) || !strings.Contains(err.Error(), "--api-key") {
 		t.Errorf("a flag key with a control character: %v", err)
+	}
+}
+
+// Not parallel: it swaps the package resolver. CI found this: "localhost"
+// resolved to ::1 first, the test server listened on 127.0.0.1 only, and the
+// transport gave up after the first address.
+func TestPlainHTTPTriesEveryLoopbackAddress(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	t.Cleanup(srv.Close)
+
+	restore := client.SetLookupIPAddr(func(context.Context, string) ([]net.IPAddr, error) {
+		return []net.IPAddr{{IP: net.IPv6loopback}, {IP: net.IPv4(127, 0, 0, 1)}}, nil
+	})
+	t.Cleanup(restore)
+
+	base := strings.Replace(srv.URL, "127.0.0.1", "localhost", 1)
+
+	_, err := client.New(base, "k").Do(t.Context(), &client.Request{Method: http.MethodGet, Path: "/projects"})
+	if err != nil {
+		t.Fatalf("::1 first, server on 127.0.0.1: %v", err)
 	}
 }
