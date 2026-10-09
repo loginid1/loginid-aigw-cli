@@ -117,13 +117,3 @@ func TestHelpDoesNotTouchTheTarget(t *testing.T) {
 		t.Errorf("help mentions the override: %q", out)
 	}
 }
-
-func TestMCPRefusesABadTemporaryBase(t *testing.T) {
-	t.Setenv("AIGW_TEMP_API_BASE", "http://evil.example")
-
-	// It must fail before it starts serving on stdin.
-	_, err := run(t, "", "mcp")
-	if err == nil || !strings.Contains(err.Error(), "must be https") {
-		t.Fatalf("aigw mcp with a bad base: %v", err)
-	}
-}

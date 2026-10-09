@@ -104,9 +104,6 @@ type schema struct {
 type overlay struct {
 	Operations map[string]struct {
 		Command string
-		// ReturnsSecret overrides secret detection, for a response whose
-		// field names do not give the secret away, or a false positive.
-		ReturnsSecret *bool `yaml:"returns_secret"`
 	}
 }
 
@@ -117,9 +114,7 @@ type outOp struct {
 	Command                              []string
 	Args, Params                         []outParam
 	Fields                               []field
-	InputSchema                          string
 	RequiredLists                        []string
-	ReturnsSecret                        bool
 	HasBody                              bool
 }
 
@@ -152,11 +147,6 @@ func generate(specPath, overlayPath, ref string) ([]byte, error) {
 	)
 
 	err := errors.Join(readYAML(specPath, &s), readYAML(overlayPath, &ov))
-	if err != nil {
-		return nil, err
-	}
-
-	raw, err := loadRawSpec(specPath)
 	if err != nil {
 		return nil, err
 	}
@@ -202,18 +192,6 @@ func generate(specPath, overlayPath, ref string) ([]byte, error) {
 			cmds[entry.Command] = o.OperationID
 
 			op, opErr := buildOp(&s, path, method, &o, entry.Command)
-			if opErr == nil {
-				op.InputSchema, opErr = raw.inputSchema(path, method)
-			}
-
-			if opErr == nil {
-				op.ReturnsSecret, opErr = raw.returnsSecret(path, method)
-			}
-
-			if entry.ReturnsSecret != nil {
-				op.ReturnsSecret = *entry.ReturnsSecret
-			}
-
 			if opErr != nil {
 				errs = append(errs, fmt.Errorf("%s: %w", o.OperationID, opErr))
 

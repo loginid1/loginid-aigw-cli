@@ -40,12 +40,6 @@ type Operation struct {
 	RequiredLists []string
 	// HasBody is true when the operation takes a JSON request body.
 	HasBody bool
-	// ReturnsSecret is true when a success response carries a one-time
-	// secret, such as a new client secret the API never shows again.
-	ReturnsSecret bool
-	// InputSchema is the JSON Schema of the operation's MCP tool input: path
-	// and query parameters next to the body's top-level fields.
-	InputSchema string
 }
 
 // Param is one input an operation takes.

@@ -23,8 +23,7 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody:     false,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"type\":\"string\"}},\"required\":[\"projectId\"],\"type\":\"object\"}",
+		HasBody: false,
 	},
 	{
 		ID:      "agentPolicy#getProject",
@@ -37,8 +36,7 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody:     false,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"type\":\"string\"}},\"required\":[\"projectId\"],\"type\":\"object\"}",
+		HasBody: false,
 	},
 	{
 		ID:      "agentPolicy#list",
@@ -51,8 +49,7 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody:     false,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"type\":\"string\"}},\"required\":[\"projectId\"],\"type\":\"object\"}",
+		HasBody: false,
 	},
 	{
 		ID:      "agentPolicy#setProject",
@@ -87,8 +84,7 @@ var Operations = []Operation{
 			"rdns":            []string{"APPROVE", "PENDING", "REJECT"},
 			"wba":             []string{"APPROVE", "PENDING", "REJECT"},
 		},
-		HasBody:     true,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"cimd\":{\"description\":\"For an agent whose metadata document was fetched from its own domain.\",\"enum\":[\"APPROVE\",\"PENDING\",\"REJECT\"],\"type\":\"string\"},\"defaultDecision\":{\"description\":\"For an agent nothing vouched for. No proof's rule may end up stricter than this.\",\"enum\":[\"APPROVE\",\"PENDING\",\"REJECT\"],\"type\":\"string\"},\"kya\":{\"description\":\"For an agent holding a credential from an issuer this scope's KYA issuer policy names.\",\"enum\":[\"APPROVE\",\"PENDING\",\"REJECT\"],\"type\":\"string\"},\"platform\":{\"description\":\"For an agent whose domain is on the platform's trusted list.\",\"enum\":[\"APPROVE\",\"PENDING\",\"REJECT\"],\"type\":\"string\"},\"projectId\":{\"type\":\"string\"},\"rdns\":{\"description\":\"For an agent whose address resolves into its domain.\",\"enum\":[\"APPROVE\",\"PENDING\",\"REJECT\"],\"type\":\"string\"},\"wba\":{\"description\":\"For an agent whose domain signed a request with Web Bot Auth.\",\"enum\":[\"APPROVE\",\"PENDING\",\"REJECT\"],\"type\":\"string\"}},\"required\":[\"projectId\"],\"type\":\"object\"}",
+		HasBody: true,
 	},
 	{
 		ID:      "projects#create",
@@ -109,8 +105,7 @@ var Operations = []Operation{
 		FieldEnums: map[string][]string{
 			"type": []string{"PROXY"},
 		},
-		HasBody:     true,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"name\":{\"description\":\"Display name of the new project.\",\"type\":\"string\"},\"type\":{\"description\":\"Fixed at creation; a project's credentials are type-specific and cannot be reinterpreted. Defaults to PROXY, currently the only supported type.\",\"enum\":[\"PROXY\"],\"type\":\"string\"}},\"required\":[\"name\"],\"type\":\"object\"}",
+		HasBody: true,
 	},
 	{
 		ID:      "projects#delete",
@@ -123,8 +118,7 @@ var Operations = []Operation{
 		Args: []Param{
 			{Name: "projectId", Flag: "", In: "path", Type: "string", Required: true, Desc: "The project to delete."},
 		},
-		HasBody:     false,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"description\":\"The project to delete.\",\"type\":\"string\"}},\"required\":[\"projectId\"],\"type\":\"object\"}",
+		HasBody: false,
 	},
 	{
 		ID:      "agentDomainRules#getProject",
@@ -140,8 +134,7 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody:     false,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"domain\":{\"description\":\"A host name; the rule covers its subdomains too. A public suffix (e.g. com, co.uk) is refused. Compared without case and without a trailing dot, so Agents.Example.com. names the same rule as agents.example.com.\",\"maxLength\":253,\"type\":\"string\"},\"projectId\":{\"type\":\"string\"}},\"required\":[\"domain\",\"projectId\"],\"type\":\"object\"}",
+		HasBody: false,
 	},
 	{
 		ID:      "agentDomainRules#list",
@@ -154,8 +147,7 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody:     false,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"type\":\"string\"}},\"required\":[\"projectId\"],\"type\":\"object\"}",
+		HasBody: false,
 	},
 	{
 		ID:      "agentDomainRules#removeProject",
@@ -171,8 +163,7 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody:     false,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"domain\":{\"description\":\"A host name; the rule covers its subdomains too. A public suffix (e.g. com, co.uk) is refused. Compared without case and without a trailing dot, so Agents.Example.com. names the same rule as agents.example.com.\",\"maxLength\":253,\"type\":\"string\"},\"projectId\":{\"type\":\"string\"}},\"required\":[\"domain\",\"projectId\"],\"type\":\"object\"}",
+		HasBody: false,
 	},
 	{
 		ID:      "agentDomainRules#setProject",
@@ -195,8 +186,7 @@ var Operations = []Operation{
 		FieldEnums: map[string][]string{
 			"decision": []string{"APPROVE", "PENDING", "REJECT"},
 		},
-		HasBody:     true,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"decision\":{\"description\":\"What agents from this domain get.\",\"enum\":[\"APPROVE\",\"PENDING\",\"REJECT\"],\"type\":\"string\"},\"domain\":{\"description\":\"A host name; the rule covers its subdomains too. A public suffix (e.g. com, co.uk) is refused. Compared without case and without a trailing dot, so Agents.Example.com. names the same rule as agents.example.com.\",\"maxLength\":253,\"type\":\"string\"},\"projectId\":{\"type\":\"string\"}},\"required\":[\"decision\",\"domain\",\"projectId\"],\"type\":\"object\"}",
+		HasBody: true,
 	},
 	{
 		ID:      "projects#get",
@@ -209,8 +199,7 @@ var Operations = []Operation{
 		Args: []Param{
 			{Name: "projectId", Flag: "", In: "path", Type: "string", Required: true, Desc: "The project to fetch."},
 		},
-		HasBody:     false,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"description\":\"The project to fetch.\",\"type\":\"string\"}},\"required\":[\"projectId\"],\"type\":\"object\"}",
+		HasBody: false,
 	},
 	{
 		ID:      "kyaIssuerPolicy#getProject",
@@ -226,8 +215,7 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody:     false,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"issuerName\":{\"description\":\"Names the platform issuer.\",\"type\":\"string\"},\"projectId\":{\"type\":\"string\"}},\"required\":[\"issuerName\",\"projectId\"],\"type\":\"object\"}",
+		HasBody: false,
 	},
 	{
 		ID:      "kyaIssuerPolicy#listProject",
@@ -240,8 +228,7 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody:     false,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"type\":\"string\"}},\"required\":[\"projectId\"],\"type\":\"object\"}",
+		HasBody: false,
 	},
 	{
 		ID:      "kyaIssuerPolicy#removeProject",
@@ -257,8 +244,7 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody:     false,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"issuerName\":{\"description\":\"Names the platform issuer.\",\"type\":\"string\"},\"projectId\":{\"type\":\"string\"}},\"required\":[\"issuerName\",\"projectId\"],\"type\":\"object\"}",
+		HasBody: false,
 	},
 	{
 		ID:      "kyaIssuerPolicy#replaceProject",
@@ -280,7 +266,6 @@ var Operations = []Operation{
 		},
 		HasBody:       true,
 		RequiredLists: []string{"entries"},
-		InputSchema:   "{\"additionalProperties\":false,\"properties\":{\"entries\":{\"description\":\"The whole whitelist afterwards. Empty clears it.\",\"items\":{\"additionalProperties\":false,\"properties\":{\"issuerName\":{\"description\":\"Names the platform issuer.\",\"type\":\"string\"},\"minTrust\":{\"default\":\"KNOWN\",\"description\":\"The lowest trust level a credential may carry and still count. Ordered strongest first. Defaults to KNOWN.\",\"enum\":[\"TRUSTED\",\"KNOWN\",\"DECLARED\",\"UNBOUND\",\"UNTRUSTED\"],\"type\":\"string\"}},\"required\":[\"issuerName\"],\"type\":\"object\"},\"type\":\"array\"},\"projectId\":{\"type\":\"string\"}},\"required\":[\"entries\",\"projectId\"],\"type\":\"object\"}",
 	},
 	{
 		ID:      "kyaIssuerPolicy#setProject",
@@ -303,19 +288,17 @@ var Operations = []Operation{
 		FieldEnums: map[string][]string{
 			"minTrust": []string{"TRUSTED", "KNOWN", "DECLARED", "UNBOUND", "UNTRUSTED"},
 		},
-		HasBody:     true,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"issuerName\":{\"description\":\"Names the platform issuer.\",\"type\":\"string\"},\"minTrust\":{\"default\":\"KNOWN\",\"description\":\"The lowest trust level a credential may carry and still count. Ordered strongest first. Defaults to KNOWN.\",\"enum\":[\"TRUSTED\",\"KNOWN\",\"DECLARED\",\"UNBOUND\",\"UNTRUSTED\"],\"type\":\"string\"},\"projectId\":{\"type\":\"string\"}},\"required\":[\"issuerName\",\"projectId\"],\"type\":\"object\"}",
+		HasBody: true,
 	},
 	{
-		ID:          "projects#list",
-		Command:     []string{"projects", "list"},
-		Short:       "Returns all projects the current user can access",
-		Long:        "Returns all projects the current user can access.",
-		Method:      "GET",
-		Path:        "/v1/projects",
-		Scope:       "project:read",
-		HasBody:     false,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}",
+		ID:      "projects#list",
+		Command: []string{"projects", "list"},
+		Short:   "Returns all projects the current user can access",
+		Long:    "Returns all projects the current user can access.",
+		Method:  "GET",
+		Path:    "/v1/projects",
+		Scope:   "project:read",
+		HasBody: false,
 	},
 	{
 		ID:      "projects#generateProxyClient",
@@ -328,9 +311,7 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: "Project the client belongs to. Must belong to the caller's account."},
 		},
-		HasBody:       false,
-		ReturnsSecret: true,
-		InputSchema:   "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"description\":\"Project the client belongs to. Must belong to the caller's account.\",\"type\":\"string\"}},\"required\":[\"projectId\"],\"type\":\"object\"}",
+		HasBody: false,
 	},
 	{
 		ID:      "projects#listProxyClients",
@@ -343,8 +324,7 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody:     false,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"type\":\"string\"}},\"required\":[\"projectId\"],\"type\":\"object\"}",
+		HasBody: false,
 	},
 	{
 		ID:      "projects#revokeProxyClient",
@@ -360,8 +340,7 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: "Project the client belongs to. Must belong to the caller's account."},
 		},
-		HasBody:     false,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"description\":\"Project the client belongs to. Must belong to the caller's account.\",\"type\":\"string\"},\"proxyClientId\":{\"description\":\"Id of the proxy client to revoke, from listProxyClients.\",\"type\":\"string\"}},\"required\":[\"projectId\",\"proxyClientId\"],\"type\":\"object\"}",
+		HasBody: false,
 	},
 	{
 		ID:      "projects#update",
@@ -380,8 +359,7 @@ var Operations = []Operation{
 		Fields: map[string]string{
 			"name": "string",
 		},
-		HasBody:     true,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"name\":{\"description\":\"The project's new display name.\",\"type\":\"string\"},\"projectId\":{\"description\":\"The project to update.\",\"type\":\"string\"}},\"required\":[\"name\",\"projectId\"],\"type\":\"object\"}",
+		HasBody: true,
 	},
 	{
 		ID:      "agentPolicy#clearResource",
@@ -395,8 +373,7 @@ var Operations = []Operation{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 			{Name: "resourceId", Flag: "resource-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody:     false,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"}},\"required\":[\"projectId\",\"resourceId\"],\"type\":\"object\"}",
+		HasBody: false,
 	},
 	{
 		ID:      "agentPolicy#getResource",
@@ -410,8 +387,7 @@ var Operations = []Operation{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 			{Name: "resourceId", Flag: "resource-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody:     false,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"}},\"required\":[\"projectId\",\"resourceId\"],\"type\":\"object\"}",
+		HasBody: false,
 	},
 	{
 		ID:      "agentPolicy#setResource",
@@ -447,8 +423,7 @@ var Operations = []Operation{
 			"rdns":            []string{"APPROVE", "PENDING", "REJECT"},
 			"wba":             []string{"APPROVE", "PENDING", "REJECT"},
 		},
-		HasBody:     true,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"cimd\":{\"description\":\"For an agent whose metadata document was fetched from its own domain.\",\"enum\":[\"APPROVE\",\"PENDING\",\"REJECT\"],\"type\":\"string\"},\"defaultDecision\":{\"description\":\"For an agent nothing vouched for. No proof's rule may end up stricter than this.\",\"enum\":[\"APPROVE\",\"PENDING\",\"REJECT\"],\"type\":\"string\"},\"kya\":{\"description\":\"For an agent holding a credential from an issuer this scope's KYA issuer policy names.\",\"enum\":[\"APPROVE\",\"PENDING\",\"REJECT\"],\"type\":\"string\"},\"platform\":{\"description\":\"For an agent whose domain is on the platform's trusted list.\",\"enum\":[\"APPROVE\",\"PENDING\",\"REJECT\"],\"type\":\"string\"},\"projectId\":{\"type\":\"string\"},\"rdns\":{\"description\":\"For an agent whose address resolves into its domain.\",\"enum\":[\"APPROVE\",\"PENDING\",\"REJECT\"],\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"},\"wba\":{\"description\":\"For an agent whose domain signed a request with Web Bot Auth.\",\"enum\":[\"APPROVE\",\"PENDING\",\"REJECT\"],\"type\":\"string\"}},\"required\":[\"projectId\",\"resourceId\"],\"type\":\"object\"}",
+		HasBody: true,
 	},
 	{
 		ID:      "resources#getAuthenticationSettings",
@@ -462,8 +437,7 @@ var Operations = []Operation{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 			{Name: "resourceId", Flag: "resource-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody:     false,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"}},\"required\":[\"projectId\",\"resourceId\"],\"type\":\"object\"}",
+		HasBody: false,
 	},
 	{
 		ID:      "resources#setAuthenticationSettings",
@@ -517,8 +491,7 @@ var Operations = []Operation{
 			"appearance.borderRadius": []string{"", "NONE", "MEDIUM", "FULL"},
 			"appearance.colorScheme":  []string{"", "LIGHT", "DARK"},
 		},
-		HasBody:     true,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"appearance\":{\"additionalProperties\":false,\"properties\":{\"accentColor\":{\"description\":\"Hex, e.g. \\\"#1E2898\\\".\",\"type\":\"string\"},\"borderRadius\":{\"enum\":[\"\",\"NONE\",\"MEDIUM\",\"FULL\"],\"type\":\"string\"},\"colorScheme\":{\"enum\":[\"\",\"LIGHT\",\"DARK\"],\"type\":\"string\"},\"logoUrl\":{\"description\":\"Absolute https URL. Shown on both screens.\",\"type\":\"string\"},\"primaryActionColor\":{\"type\":\"string\"},\"secondaryActionColor\":{\"type\":\"string\"}},\"type\":\"object\"},\"content\":{\"additionalProperties\":false,\"properties\":{\"consent\":{\"additionalProperties\":false,\"properties\":{\"approveActionLabel\":{\"type\":\"string\"},\"denyActionLabel\":{\"type\":\"string\"},\"footerText\":{\"type\":\"string\"},\"heading\":{\"type\":\"string\"}},\"required\":[\"heading\",\"approveActionLabel\",\"denyActionLabel\"],\"type\":\"object\"},\"signIn\":{\"additionalProperties\":false,\"properties\":{\"footerText\":{\"type\":\"string\"},\"heading\":{\"type\":\"string\"},\"primaryActionLabel\":{\"type\":\"string\"},\"subheading\":{\"type\":\"string\"}},\"required\":[\"heading\"],\"type\":\"object\"}},\"type\":\"object\"},\"options\":{\"additionalProperties\":false,\"properties\":{\"allowOneTimeCodeFallback\":{\"type\":\"boolean\"},\"showScopeDescriptions\":{\"type\":\"boolean\"},\"showVerifiedAgent\":{\"type\":\"boolean\"}},\"required\":[\"allowOneTimeCodeFallback\",\"showScopeDescriptions\",\"showVerifiedAgent\"],\"type\":\"object\"},\"projectId\":{\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"}},\"required\":[\"projectId\",\"resourceId\"],\"type\":\"object\"}",
+		HasBody: true,
 	},
 	{
 		ID:      "resources#create",
@@ -575,9 +548,7 @@ var Operations = []Operation{
 			"kind":                                []string{"EXCHANGE", "OAUTH_CLIENT"},
 			"oauthClient.tokenEndpointAuthMethod": []string{"CLIENT_SECRET_BASIC", "CLIENT_SECRET_POST", "NONE"},
 		},
-		HasBody:       true,
-		ReturnsSecret: true,
-		InputSchema:   "{\"additionalProperties\":false,\"properties\":{\"exchange\":{\"additionalProperties\":false,\"properties\":{\"actorClientId\":{\"description\":\"A service account at the merchant we authenticate as when exchanging. TOKEN_EXCHANGE only.\",\"type\":\"string\"},\"actorClientSecret\":{\"description\":\"Required with actorClientId. Never returned once stored; omit on update to keep it.\",\"type\":\"string\"},\"audience\":{\"description\":\"An alternative to the indicator, for a server that identifies APIs by name. TOKEN_EXCHANGE only.\",\"type\":\"string\"},\"authMethod\":{\"enum\":[\"PRIVATE_KEY_JWT\",\"CLIENT_SECRET_BASIC\",\"TOKEN_EXCHANGE\"],\"type\":\"string\"},\"clientId\":{\"type\":\"string\"},\"clientSecret\":{\"description\":\"Required for CLIENT_SECRET_BASIC, rejected otherwise. Never returned once stored.\",\"type\":\"string\"},\"indicator\":{\"description\":\"Unique across the platform: it is what resolves the tenant.\",\"type\":\"string\"},\"issuer\":{\"type\":\"string\"},\"sendResourceParam\":{\"description\":\"Defaults to true. Only a token exchange carries it.\",\"type\":\"boolean\"},\"subjectTokenType\":{\"description\":\"Leave empty unless the server defines one of its own. TOKEN_EXCHANGE only.\",\"type\":\"string\"},\"tokenEndpoint\":{\"type\":\"string\"}},\"required\":[\"indicator\",\"issuer\",\"tokenEndpoint\",\"clientId\",\"authMethod\"],\"type\":\"object\"},\"idps\":{\"description\":\"IdP names to select for this resource, e.g. \\\"google\\\".\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"kind\":{\"default\":\"EXCHANGE\",\"description\":\"Identifies the resource direction.\",\"enum\":[\"EXCHANGE\",\"OAUTH_CLIENT\"],\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"oauthClient\":{\"additionalProperties\":false,\"properties\":{\"redirectUris\":{\"description\":\"Absolute https URLs.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"scopes\":{\"description\":\"From openid, profile, email, phone and offline_access; openid is always included.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"tokenEndpointAuthMethod\":{\"description\":\"Defaults to CLIENT_SECRET_BASIC on create. A client does not change it; omit on update.\",\"enum\":[\"CLIENT_SECRET_BASIC\",\"CLIENT_SECRET_POST\",\"NONE\"],\"type\":\"string\"}},\"required\":[\"redirectUris\"],\"type\":\"object\"},\"projectId\":{\"type\":\"string\"},\"scopes\":{\"description\":\"EXCHANGE only: the scopes the resource exposes.\",\"items\":{\"additionalProperties\":false,\"properties\":{\"description\":{\"type\":\"string\"},\"displayName\":{\"type\":\"string\"},\"value\":{\"type\":\"string\"}},\"required\":[\"value\",\"displayName\",\"description\"],\"type\":\"object\"},\"type\":\"array\"}},\"required\":[\"name\",\"projectId\"],\"type\":\"object\"}",
+		HasBody: true,
 	},
 	{
 		ID:      "resources#delete",
@@ -593,8 +564,7 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody:     false,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"}},\"required\":[\"projectId\",\"resourceId\"],\"type\":\"object\"}",
+		HasBody: false,
 	},
 	{
 		ID:      "agentDomainRules#getResource",
@@ -611,8 +581,7 @@ var Operations = []Operation{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 			{Name: "resourceId", Flag: "resource-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody:     false,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"domain\":{\"description\":\"A host name; the rule covers its subdomains too. A public suffix (e.g. com, co.uk) is refused. Compared without case and without a trailing dot, so Agents.Example.com. names the same rule as agents.example.com.\",\"maxLength\":253,\"type\":\"string\"},\"projectId\":{\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"}},\"required\":[\"domain\",\"projectId\",\"resourceId\"],\"type\":\"object\"}",
+		HasBody: false,
 	},
 	{
 		ID:      "agentDomainRules#listResource",
@@ -626,8 +595,7 @@ var Operations = []Operation{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 			{Name: "resourceId", Flag: "resource-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody:     false,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"}},\"required\":[\"projectId\",\"resourceId\"],\"type\":\"object\"}",
+		HasBody: false,
 	},
 	{
 		ID:      "agentDomainRules#removeResource",
@@ -644,8 +612,7 @@ var Operations = []Operation{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 			{Name: "resourceId", Flag: "resource-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody:     false,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"domain\":{\"description\":\"A host name; the rule covers its subdomains too. A public suffix (e.g. com, co.uk) is refused. Compared without case and without a trailing dot, so Agents.Example.com. names the same rule as agents.example.com.\",\"maxLength\":253,\"type\":\"string\"},\"projectId\":{\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"}},\"required\":[\"domain\",\"projectId\",\"resourceId\"],\"type\":\"object\"}",
+		HasBody: false,
 	},
 	{
 		ID:      "agentDomainRules#setResource",
@@ -669,8 +636,7 @@ var Operations = []Operation{
 		FieldEnums: map[string][]string{
 			"decision": []string{"APPROVE", "PENDING", "REJECT"},
 		},
-		HasBody:     true,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"decision\":{\"description\":\"What agents from this domain get.\",\"enum\":[\"APPROVE\",\"PENDING\",\"REJECT\"],\"type\":\"string\"},\"domain\":{\"description\":\"A host name; the rule covers its subdomains too. A public suffix (e.g. com, co.uk) is refused. Compared without case and without a trailing dot, so Agents.Example.com. names the same rule as agents.example.com.\",\"maxLength\":253,\"type\":\"string\"},\"projectId\":{\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"}},\"required\":[\"decision\",\"domain\",\"projectId\",\"resourceId\"],\"type\":\"object\"}",
+		HasBody: true,
 	},
 	{
 		ID:      "resources#get",
@@ -686,8 +652,7 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody:     false,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"}},\"required\":[\"projectId\",\"resourceId\"],\"type\":\"object\"}",
+		HasBody: false,
 	},
 	{
 		ID:      "kyaIssuerPolicy#getResource",
@@ -704,8 +669,7 @@ var Operations = []Operation{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 			{Name: "resourceId", Flag: "resource-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody:     false,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"issuerName\":{\"description\":\"Names the platform issuer.\",\"type\":\"string\"},\"projectId\":{\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"}},\"required\":[\"issuerName\",\"projectId\",\"resourceId\"],\"type\":\"object\"}",
+		HasBody: false,
 	},
 	{
 		ID:      "kyaIssuerPolicy#listResource",
@@ -719,8 +683,7 @@ var Operations = []Operation{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 			{Name: "resourceId", Flag: "resource-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody:     false,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"}},\"required\":[\"projectId\",\"resourceId\"],\"type\":\"object\"}",
+		HasBody: false,
 	},
 	{
 		ID:      "kyaIssuerPolicy#removeResource",
@@ -737,8 +700,7 @@ var Operations = []Operation{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 			{Name: "resourceId", Flag: "resource-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody:     false,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"issuerName\":{\"description\":\"Names the platform issuer.\",\"type\":\"string\"},\"projectId\":{\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"}},\"required\":[\"issuerName\",\"projectId\",\"resourceId\"],\"type\":\"object\"}",
+		HasBody: false,
 	},
 	{
 		ID:      "kyaIssuerPolicy#replaceResource",
@@ -761,7 +723,6 @@ var Operations = []Operation{
 		},
 		HasBody:       true,
 		RequiredLists: []string{"entries"},
-		InputSchema:   "{\"additionalProperties\":false,\"properties\":{\"entries\":{\"description\":\"The whole whitelist afterwards. Empty clears it.\",\"items\":{\"additionalProperties\":false,\"properties\":{\"issuerName\":{\"description\":\"Names the platform issuer.\",\"type\":\"string\"},\"minTrust\":{\"default\":\"KNOWN\",\"description\":\"The lowest trust level a credential may carry and still count. Ordered strongest first. Defaults to KNOWN.\",\"enum\":[\"TRUSTED\",\"KNOWN\",\"DECLARED\",\"UNBOUND\",\"UNTRUSTED\"],\"type\":\"string\"}},\"required\":[\"issuerName\"],\"type\":\"object\"},\"type\":\"array\"},\"projectId\":{\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"}},\"required\":[\"entries\",\"projectId\",\"resourceId\"],\"type\":\"object\"}",
 	},
 	{
 		ID:      "kyaIssuerPolicy#setResource",
@@ -785,8 +746,7 @@ var Operations = []Operation{
 		FieldEnums: map[string][]string{
 			"minTrust": []string{"TRUSTED", "KNOWN", "DECLARED", "UNBOUND", "UNTRUSTED"},
 		},
-		HasBody:     true,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"issuerName\":{\"description\":\"Names the platform issuer.\",\"type\":\"string\"},\"minTrust\":{\"default\":\"KNOWN\",\"description\":\"The lowest trust level a credential may carry and still count. Ordered strongest first. Defaults to KNOWN.\",\"enum\":[\"TRUSTED\",\"KNOWN\",\"DECLARED\",\"UNBOUND\",\"UNTRUSTED\"],\"type\":\"string\"},\"projectId\":{\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"}},\"required\":[\"issuerName\",\"projectId\",\"resourceId\"],\"type\":\"object\"}",
+		HasBody: true,
 	},
 	{
 		ID:      "resources#list",
@@ -799,8 +759,7 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody:     false,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"type\":\"string\"}},\"required\":[\"projectId\"],\"type\":\"object\"}",
+		HasBody: false,
 	},
 	{
 		ID:      "resources#update",
@@ -862,7 +821,6 @@ var Operations = []Operation{
 		},
 		HasBody:       true,
 		RequiredLists: []string{"scopes"},
-		InputSchema:   "{\"additionalProperties\":false,\"properties\":{\"exchange\":{\"additionalProperties\":false,\"properties\":{\"actorClientId\":{\"description\":\"A service account at the merchant we authenticate as when exchanging. TOKEN_EXCHANGE only.\",\"type\":\"string\"},\"actorClientSecret\":{\"description\":\"Required with actorClientId. Never returned once stored; omit on update to keep it.\",\"type\":\"string\"},\"audience\":{\"description\":\"An alternative to the indicator, for a server that identifies APIs by name. TOKEN_EXCHANGE only.\",\"type\":\"string\"},\"authMethod\":{\"enum\":[\"PRIVATE_KEY_JWT\",\"CLIENT_SECRET_BASIC\",\"TOKEN_EXCHANGE\"],\"type\":\"string\"},\"clientId\":{\"type\":\"string\"},\"clientSecret\":{\"description\":\"Required for CLIENT_SECRET_BASIC, rejected otherwise. Never returned once stored.\",\"type\":\"string\"},\"indicator\":{\"description\":\"Unique across the platform: it is what resolves the tenant.\",\"type\":\"string\"},\"issuer\":{\"type\":\"string\"},\"sendResourceParam\":{\"description\":\"Defaults to true. Only a token exchange carries it.\",\"type\":\"boolean\"},\"subjectTokenType\":{\"description\":\"Leave empty unless the server defines one of its own. TOKEN_EXCHANGE only.\",\"type\":\"string\"},\"tokenEndpoint\":{\"type\":\"string\"}},\"required\":[\"indicator\",\"issuer\",\"tokenEndpoint\",\"clientId\",\"authMethod\"],\"type\":\"object\"},\"idps\":{\"description\":\"IdP names to select for this resource, e.g. \\\"google\\\".\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"kind\":{\"description\":\"Identifies the resource direction. It is used only to validate that the existing kind is unchanged.\",\"enum\":[\"EXCHANGE\",\"OAUTH_CLIENT\"],\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"oauthClient\":{\"additionalProperties\":false,\"properties\":{\"redirectUris\":{\"description\":\"Absolute https URLs.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"scopes\":{\"description\":\"From openid, profile, email, phone and offline_access; openid is always included.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"tokenEndpointAuthMethod\":{\"description\":\"Defaults to CLIENT_SECRET_BASIC on create. A client does not change it; omit on update.\",\"enum\":[\"CLIENT_SECRET_BASIC\",\"CLIENT_SECRET_POST\",\"NONE\"],\"type\":\"string\"}},\"required\":[\"redirectUris\"],\"type\":\"object\"},\"projectId\":{\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"},\"scopes\":{\"description\":\"EXCHANGE only: the scopes the resource exposes.\",\"items\":{\"additionalProperties\":false,\"properties\":{\"description\":{\"type\":\"string\"},\"displayName\":{\"type\":\"string\"},\"value\":{\"type\":\"string\"}},\"required\":[\"value\",\"displayName\",\"description\"],\"type\":\"object\"},\"type\":\"array\"}},\"required\":[\"idps\",\"kind\",\"name\",\"projectId\",\"resourceId\",\"scopes\"],\"type\":\"object\"}",
 	},
 	{
 		ID:      "resources#listScopes",
@@ -876,8 +834,7 @@ var Operations = []Operation{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 			{Name: "resourceId", Flag: "resource-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody:     false,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"}},\"required\":[\"projectId\",\"resourceId\"],\"type\":\"object\"}",
+		HasBody: false,
 	},
 	{
 		ID:      "resources#generateSigningKey",
@@ -891,8 +848,7 @@ var Operations = []Operation{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 			{Name: "resourceId", Flag: "resource-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody:     false,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"}},\"required\":[\"projectId\",\"resourceId\"],\"type\":\"object\"}",
+		HasBody: false,
 	},
 	{
 		ID:      "resources#listSigningKeys",
@@ -906,8 +862,7 @@ var Operations = []Operation{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: ""},
 			{Name: "resourceId", Flag: "resource-id", In: "path", Type: "string", Required: true, Desc: ""},
 		},
-		HasBody:     false,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"projectId\":{\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"}},\"required\":[\"projectId\",\"resourceId\"],\"type\":\"object\"}",
+		HasBody: false,
 	},
 	{
 		ID:      "resources#patch",
@@ -967,7 +922,6 @@ var Operations = []Operation{
 			"kind":                                []string{"EXCHANGE", "OAUTH_CLIENT"},
 			"oauthClient.tokenEndpointAuthMethod": []string{"CLIENT_SECRET_BASIC", "CLIENT_SECRET_POST", "NONE"},
 		},
-		HasBody:     true,
-		InputSchema: "{\"additionalProperties\":false,\"properties\":{\"exchange\":{\"additionalProperties\":false,\"properties\":{\"actorClientId\":{\"description\":\"A service account at the merchant we authenticate as when exchanging. TOKEN_EXCHANGE only.\",\"type\":\"string\"},\"actorClientSecret\":{\"description\":\"Required with actorClientId. Never returned once stored; omit on update to keep it.\",\"type\":\"string\"},\"audience\":{\"description\":\"An alternative to the indicator, for a server that identifies APIs by name. TOKEN_EXCHANGE only.\",\"type\":\"string\"},\"authMethod\":{\"enum\":[\"PRIVATE_KEY_JWT\",\"CLIENT_SECRET_BASIC\",\"TOKEN_EXCHANGE\"],\"type\":\"string\"},\"clientId\":{\"type\":\"string\"},\"clientSecret\":{\"description\":\"Required for CLIENT_SECRET_BASIC, rejected otherwise. Never returned once stored.\",\"type\":\"string\"},\"indicator\":{\"description\":\"Unique across the platform: it is what resolves the tenant.\",\"type\":\"string\"},\"issuer\":{\"type\":\"string\"},\"sendResourceParam\":{\"description\":\"Defaults to true. Only a token exchange carries it.\",\"type\":\"boolean\"},\"subjectTokenType\":{\"description\":\"Leave empty unless the server defines one of its own. TOKEN_EXCHANGE only.\",\"type\":\"string\"},\"tokenEndpoint\":{\"type\":\"string\"}},\"required\":[\"indicator\",\"issuer\",\"tokenEndpoint\",\"clientId\",\"authMethod\"],\"type\":\"object\"},\"idps\":{\"description\":\"IdP names to select for this resource, e.g. \\\"google\\\".\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"kind\":{\"description\":\"Identifies the resource direction. It is used only to validate that the existing kind is unchanged.\",\"enum\":[\"EXCHANGE\",\"OAUTH_CLIENT\"],\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"oauthClient\":{\"additionalProperties\":false,\"properties\":{\"redirectUris\":{\"description\":\"Absolute https URLs.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"scopes\":{\"description\":\"From openid, profile, email, phone and offline_access; openid is always included.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"tokenEndpointAuthMethod\":{\"description\":\"Defaults to CLIENT_SECRET_BASIC on create. A client does not change it; omit on update.\",\"enum\":[\"CLIENT_SECRET_BASIC\",\"CLIENT_SECRET_POST\",\"NONE\"],\"type\":\"string\"}},\"required\":[\"redirectUris\"],\"type\":\"object\"},\"projectId\":{\"type\":\"string\"},\"resourceId\":{\"type\":\"string\"},\"scopes\":{\"description\":\"EXCHANGE only: the scopes the resource exposes.\",\"items\":{\"additionalProperties\":false,\"properties\":{\"description\":{\"type\":\"string\"},\"displayName\":{\"type\":\"string\"},\"value\":{\"type\":\"string\"}},\"required\":[\"value\",\"displayName\",\"description\"],\"type\":\"object\"},\"type\":\"array\"}},\"required\":[\"projectId\",\"resourceId\"],\"type\":\"object\"}",
+		HasBody: true,
 	},
 }

@@ -73,10 +73,6 @@ linters:
             - golang.org/x/term
             # config.toml and the --insecure-storage credentials file.
             - github.com/BurntSushi/toml
-            # `aigw mcp`: the official Model Context Protocol SDK.
-            - github.com/modelcontextprotocol/go-sdk
-            # Validates MCP tool arguments; the MCP SDK already depends on it.
-            - github.com/google/jsonschema-go
             - gitlab.com/loginid/software/loginid-aigw-cli.git
           deny:
             - pkg: github.com/sirupsen/logrus

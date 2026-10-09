@@ -10,11 +10,4 @@ const (
 
 	inPath  = "path"
 	inQuery = "query"
-
-	kItems                = "items"
-	kProperties           = "properties"
-	kAdditionalProperties = "additionalProperties"
-
-	password = "password"
-	token    = "token"
 )

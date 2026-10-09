@@ -57,10 +57,6 @@ var Operations = []Operation{
 		{{- if .RequiredLists }}
 		RequiredLists: {{ qs .RequiredLists }},
 		{{- end }}
-		{{- if .ReturnsSecret }}
-		ReturnsSecret: true,
-		{{- end }}
-		InputSchema: {{ q .InputSchema }},
 	},
 {{- end }}
 }
