@@ -37,6 +37,13 @@ build:
   extends:
     - .build_common
   stage: build
+  # Not on tags: the release job builds and names the tagged binaries, so a
+  # tag pipeline would otherwise build them twice, under two naming styles.
+  # lint and unit-test keep the shared rules, since the release job needs them.
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: never
+    - !reference [.build_common_rules, rules]
   parallel:
     matrix:
       - GOOS: linux
@@ -110,7 +117,12 @@ goreleaser-snapshot:
     - goreleaser release --snapshot --clean
   artifacts:
     paths:
-      - dist/aigw_*
+      # The zips, plus each bare binary once. dist/aigw_* would also take the
+      # build folders whole. A snapshot keeps each bare binary in its build
+      # folder; it gets its versioned name only when a release uploads it, so
+      # a dist/aigw_*_linux_amd64 pattern would match nothing.
+      - dist/aigw_*.zip
+      - dist/aigw_linux_*/aigw
       - dist/checksums.txt
     expire_in: 1 day
 

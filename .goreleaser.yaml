@@ -61,8 +61,6 @@ release:
   gitlab:
     owner: loginid/software
     name: loginid-aigw-cli
-  # Tags like v0.1.0-alpha.1 are marked as pre-releases.
-  prerelease: auto
   # The bare binaries cannot carry the notices themselves, so they ship as a
   # file of their own next to them.
   extra_files:
