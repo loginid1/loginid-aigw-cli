@@ -89,7 +89,7 @@ func TestResourcesCreateBuildsRequest(t *testing.T) {
 		t.Fatalf("resources create: %v", err)
 	}
 
-	if got.method != http.MethodPost || got.path != "/projects/proj-9/resources" {
+	if got.method != http.MethodPost || got.path != "/v1/projects/proj-9/resources" {
 		t.Errorf("got %s %s", got.method, got.path)
 	}
 
@@ -127,7 +127,7 @@ func TestPositionalIDIsTheLastPathSegment(t *testing.T) {
 	}
 
 	// The slash is escaped, so an id cannot walk into another path.
-	if got.path != "/projects/proj-9/resources/res%2F7" {
+	if got.path != "/v1/projects/proj-9/resources/res%2F7" {
 		t.Errorf("path = %q", got.path)
 	}
 

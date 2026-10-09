@@ -216,7 +216,7 @@ func TestCallSplitsArguments(t *testing.T) {
 		t.Fatalf("tool error: %s", text(res))
 	}
 
-	if got.method != http.MethodPatch || got.path != "/projects/proj-9/resources/res-1" {
+	if got.method != http.MethodPatch || got.path != "/v1/projects/proj-9/resources/res-1" {
 		t.Errorf("sent %s %s", got.method, got.path)
 	}
 
