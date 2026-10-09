@@ -267,7 +267,18 @@ func run(cmd *cobra.Command, op *Operation, resolveTarget func() (Target, error)
 	}
 
 	if err != nil {
-		return exitError(err)
+		mapped := exitError(err)
+
+		var exitErr *ExitError
+		if errors.As(mapped, &exitErr) {
+			return mapped
+		}
+
+		// Anything else came from reading the saved key: a corrupt file, a
+		// locked or denied keyring, a timeout. Exit 3 all the same, so a
+		// script treating 3 as "re-authenticate" still does.
+		return &ExitError{Code: ExitNotAuthenticated, Err: fmt.Errorf(
+			"read the saved API key: %w; run `aigw login` again, or set %s", err, client.EnvAPIKey)}
 	}
 
 	req := &client.Request{

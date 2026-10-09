@@ -53,7 +53,20 @@ func Save(dir, profile, key string, insecure bool) (string, error) {
 		err = writeFileKey(dir, profile, key)
 	} else {
 		err = keyringSet(profile, key)
-		if err != nil {
+
+		switch {
+		case errors.Is(err, errTimeout):
+			// The store may still save the key after we stop waiting. With no
+			// earlier login, record the profile anyway, so that logout, or a
+			// later login to another store, finds and removes a key that
+			// lands late instead of leaving it orphaned.
+			if !hadPrev {
+				cfg[profile] = p
+				_ = config.Save(dir, cfg)
+			}
+
+			err = fmt.Errorf("save to %s: %w; it may still have saved the key. Run `aigw logout`, then try again", storeName(), err)
+		case err != nil:
 			err = fmt.Errorf("save to %s: %w\n"+
 				"No usable credential store here. Set AIGW_API_KEY instead, or run "+
 				"`aigw login --insecure-storage` to keep the key in a plain file", storeName(), err)

@@ -27,7 +27,9 @@ pkg_list := $(shell go list ./... | grep -v /test)
 AIGW_SPEC_REF ?= 992bd2fd4747fd3d010d721f6c6437bd6049dd43
 AIGW_SPEC ?=
 spec_project := loginid%2Fsoftware%2Floginid-aigw
-spec_file_path := api%2Frest%2Fdevcon%2Fopenapi3.yaml
+# One path for both fetches, so moving the spec cannot break CI alone.
+spec_path := api/rest/devcon/openapi3.yaml
+spec_file_path := $(subst /,%2F,$(spec_path))
 spec_cache := build/devcon-openapi3-$(AIGW_SPEC_REF).yaml
 
 .PHONY: all build lint_prep lint lint_fix lint_ci test test_unit test_coverage clean generate generate_check notices
@@ -84,7 +86,7 @@ ifdef CI_JOB_TOKEN
 	@echo "git fetch loginid-aigw $(AIGW_SPEC_REF)"
 	@git -C build/spec-repo fetch -q --depth 1 \
 		"https://gitlab-ci-token:$(CI_JOB_TOKEN)@$(CI_SERVER_HOST)/loginid/software/loginid-aigw.git" $(AIGW_SPEC_REF)
-	git -C build/spec-repo show FETCH_HEAD:api/rest/devcon/openapi3.yaml > $@.tmp
+	git -C build/spec-repo show FETCH_HEAD:$(spec_path) > $@.tmp
 	rm -rf build/spec-repo
 else
 	glab api "projects/$(spec_project)/repository/files/$(spec_file_path)/raw?ref=$(AIGW_SPEC_REF)" > $@.tmp

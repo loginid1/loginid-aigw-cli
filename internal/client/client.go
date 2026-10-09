@@ -226,7 +226,14 @@ func (c *Client) url(req *Request) (string, error) {
 	}
 
 	if i := strings.Index(path, "{"); i >= 0 {
-		return "", fmt.Errorf("%s %s: path parameter %s has no value", req.Method, req.Path, path[i:])
+		// Name just this parameter, up to its closing brace, not the rest of
+		// the path with any later parameters in it.
+		name := path[i:]
+		if j := strings.Index(name, "}"); j >= 0 {
+			name = name[:j+1]
+		}
+
+		return "", fmt.Errorf("%s %s: path parameter %s has no value", req.Method, req.Path, name)
 	}
 
 	u := c.BaseURL + path

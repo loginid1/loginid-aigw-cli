@@ -57,6 +57,18 @@ func TestDoSendsRequest(t *testing.T) {
 	}
 }
 
+func TestUnfilledPathParamIsNamedAlone(t *testing.T) {
+	t.Parallel()
+
+	_, err := client.New("http://unused.invalid", "k").Do(t.Context(), &client.Request{
+		Method: http.MethodGet,
+		Path:   "/v1/projects/{projectId}/resources/{resourceId}",
+	})
+	if err == nil || !strings.Contains(err.Error(), "parameter {projectId} has no value") {
+		t.Errorf("want only {projectId} named, got %v", err)
+	}
+}
+
 func TestDoRejectsUnfilledPathParam(t *testing.T) {
 	t.Parallel()
 
