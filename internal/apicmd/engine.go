@@ -13,7 +13,6 @@ import (
 	"os"
 	"slices"
 	"strings"
-	"unicode"
 
 	"github.com/spf13/cobra"
 
@@ -528,23 +527,17 @@ func printJSON(w io.Writer, body []byte) error {
 
 	var buf bytes.Buffer
 
+	// The client only returns JSON (see client.ErrNotAPI), so this cannot
+	// fail on a server's say-so.
 	err := json.Indent(&buf, body, "", "  ")
 	if err != nil {
-		// Not JSON: pass it through rather than lose it, but without control
-		// characters, which could drive the terminal. Valid JSON cannot hold
-		// raw ones, so the indented path needs no such care.
-		buf.Reset()
-		buf.WriteString(strings.Map(func(r rune) rune {
-			if r != '\n' && r != '\t' && unicode.IsControl(r) {
-				return -1
-			}
-
-			return r
-		}, string(body)))
+		return fmt.Errorf("format response: %w", err)
 	}
 
-	buf.WriteByte('\n')
-	_, err = w.Write(buf.Bytes())
+	// One newline at the end. The API's own trailing newline would otherwise
+	// leave a blank line after the closing brace.
+	out := append(bytes.TrimRight(buf.Bytes(), "\r\n"), '\n')
+	_, err = w.Write(out)
 
 	return err
 }

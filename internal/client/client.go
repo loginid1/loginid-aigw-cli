@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -210,7 +211,33 @@ func (c *Client) Do(ctx context.Context, req *Request) ([]byte, error) {
 		return nil, apiErr
 	}
 
+	// The API always answers in JSON. Anything else on a success status
+	// means the request reached something other than the API, most often a
+	// web app that serves its page for every path when the base URL is
+	// wrong. Passing that on would print a web page and exit 0.
+	if len(bytes.TrimSpace(respBody)) > 0 && !json.Valid(respBody) {
+		return nil, fmt.Errorf("%s %s: HTTP %d: %w (got %s)", req.Method, req.Path, resp.StatusCode,
+			ErrNotAPI, contentKind(resp.Header.Get("Content-Type")))
+	}
+
 	return respBody, nil
+}
+
+// ErrNotAPI means a success reply was not JSON, so it did not come from the API.
+var ErrNotAPI = errors.New("the server did not answer in JSON, so this is probably not the API: check the base URL")
+
+// contentKind names a Content-Type for an error message, e.g. "a web page
+// (text/html)", without echoing anything from the body.
+func contentKind(contentType string) string {
+	media, _, err := mime.ParseMediaType(contentType)
+	switch {
+	case err != nil || media == "":
+		return "an unlabeled reply"
+	case media == "text/html":
+		return "a web page (text/html)"
+	default:
+		return Printable(media)
+	}
 }
 
 func (c *Client) url(req *Request) (string, error) {

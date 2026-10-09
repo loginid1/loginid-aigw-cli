@@ -397,17 +397,40 @@ func TestUnknownSubcommandFails(t *testing.T) {
 	}
 }
 
-func TestNonJSONBodyIsMadeSafe(t *testing.T) {
+// A success reply that is not JSON did not come from the API: most often a
+// wrong base URL that reached a web app serving its page for every path.
+// Found against eval, where aigw.eval.loginid.ai/v1/projects returned the
+// console's HTML and the CLI printed it and exited 0.
+func TestNonJSONSuccessIsAnError(t *testing.T) {
 	t.Parallel()
 
-	srv, _ := serve(t, http.StatusOK, "plain \x1b[31mred\x07 text")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = io.WriteString(w, "<!doctype html><title>Console</title>\x1b[31m")
+	}))
+	t.Cleanup(srv.Close)
 
 	out, err := runAigw(t, srv.URL, projects, "list", apiKey, "k")
+	if err == nil || !strings.Contains(err.Error(), "check the base URL") || !strings.Contains(err.Error(), "a web page (text/html)") {
+		t.Fatalf("want a not-the-API error, got %v", err)
+	}
+
+	if strings.Contains(out, "<!doctype") || strings.ContainsRune(err.Error(), '\x1b') {
+		t.Errorf("the page leaked into the output: %q / %q", out, err)
+	}
+}
+
+func TestJSONOutputEndsWithOneNewline(t *testing.T) {
+	t.Parallel()
+
+	srv, _ := serve(t, http.StatusOK, "{\"id\":\"p1\"}\n") // Goa ends bodies with a newline
+
+	out, err := runAigw(t, srv.URL, projects, "get", "p1", apiKey, "k")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if strings.ContainsAny(out, "\x1b\x07") || !strings.Contains(out, "plain [31mred text") {
+	if out != "{\n  \"id\": \"p1\"\n}\n" {
 		t.Errorf("output %q", out)
 	}
 }
