@@ -3,22 +3,21 @@ package apicmd
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
-	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/config"
-	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/credentials"
+	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/client"
+	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/prompt"
 )
 
 // Flag names every operation command shares. The generator refuses a spec whose
@@ -29,41 +28,83 @@ const (
 	flagOutput  = "output"
 	flagConfirm = "confirm"
 
-	envAPIKey = "AIGW_API_KEY" //nolint:gosec // the name of an env var, not a credential
-
 	// TEMP: see AddAll.
 	envTempAPIBase = "AIGW_TEMP_API_BASE"
-
-	requestTimeout = 30 * time.Second
 )
 
 // AddAll registers every generated operation under root, building the noun
-// commands the operations' paths name along the way.
-//
-// Requests go to DefaultAPIBase, the spec's server. The base is not a flag: a
-// key sent to a URL the user typed would leak.
-//
-// TEMP: envTempAPIBase overrides it, for testing against local and staging
-// servers until there is a proper answer for those. It is left out of all help
-// text on purpose, and every run that uses it says so on stderr. Remove it
-// once that answer exists.
+// commands the operations' paths name along the way. Where requests go is
+// decided when one runs, so `--help` neither warns nor fails over it.
 func AddAll(root *cobra.Command) {
-	base := DefaultAPIBase
-
-	if override := os.Getenv(envTempAPIBase); override != "" {
-		fmt.Fprintf(os.Stderr, "warning: %s is set; API requests go to %s\n", envTempAPIBase, override)
-
-		base = override
-	}
-
-	addAll(root, base)
+	addAll(root, ResolveTarget)
 }
 
-func addAll(root *cobra.Command, base string) {
+func addAll(root *cobra.Command, target func() (Target, error)) {
 	for i := range Operations {
 		op := &Operations[i]
 		parent := ensureGroups(root, op.Command[:len(op.Command)-1])
-		parent.AddCommand(newOperationCommand(op, base))
+		parent.AddCommand(newOperationCommand(op, target))
+	}
+}
+
+// Target is where API requests go.
+type Target struct {
+	BaseURL string
+	// Temporary is true when AIGW_TEMP_API_BASE chose BaseURL. The key then
+	// comes only from --api-key or AIGW_TEMP_API_KEY: never the saved login
+	// and never AIGW_API_KEY, so a variable set by a cloned repo's .mcp.json
+	// or .envrc cannot collect a key it does not already know.
+	Temporary bool
+}
+
+// ResolveTarget returns DefaultAPIBase, the spec's server. It is not a flag:
+// a key sent to a URL the user typed would leak.
+//
+// TEMP: envTempAPIBase overrides it, for testing against local and staging
+// servers until there is a proper answer for those. It is left out of all help
+// text on purpose; it must be https, or http on localhost or a loopback IP;
+// and every run that uses it says so on stderr. Remove it once that answer
+// exists.
+func ResolveTarget() (Target, error) {
+	override := os.Getenv(envTempAPIBase)
+	if override == "" {
+		return Target{BaseURL: DefaultAPIBase}, nil
+	}
+
+	u, err := url.Parse(override)
+	// No query or fragment: the API path is appended to the base as a string,
+	// and would land inside them, so every call would hit the same URL.
+	if err != nil || u.Host == "" || u.User != nil || u.Opaque != "" ||
+		u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(override, "#") {
+		return Target{}, fmt.Errorf("%s=%q is not a usable base URL", envTempAPIBase, override)
+	}
+
+	if u.Scheme != "https" && (u.Scheme != "http" || !isLoopback(u.Hostname())) {
+		return Target{}, fmt.Errorf("%s must be https, or http on localhost; got %q", envTempAPIBase, override)
+	}
+
+	return Target{BaseURL: override, Temporary: true}, nil
+}
+
+// isLoopback accepts "localhost" and loopback IPs. Not "*.localhost": Go
+// resolves those through DNS, which a hostile network answers. For plain http
+// the client also refuses to dial anything that does not resolve to loopback.
+func isLoopback(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+
+	ip := net.ParseIP(host)
+
+	return ip != nil && ip.IsLoopback()
+}
+
+// Warn says on w that requests go to a temporary base URL. Each run resolves
+// the target once, so this prints once.
+func (t Target) Warn(w io.Writer) {
+	if t.Temporary {
+		fmt.Fprintf(w, "warning: %s is set; API requests go to %s with the key from --%s or %s\n",
+			envTempAPIBase, t.BaseURL, flagAPIKey, client.EnvTempAPIKey)
 	}
 }
 
@@ -77,11 +118,12 @@ func ensureGroups(root *cobra.Command, path []string) *cobra.Command {
 			next = &cobra.Command{
 				Use:   name,
 				Short: "Manage " + strings.ReplaceAll(name, "-", " "),
-				Args:  cobra.NoArgs,
+				Args:  cobra.ArbitraryArgs,
+				RunE:  groupRunE,
 			}
 			if depth == 0 {
 				pf := next.PersistentFlags()
-				pf.String(flagAPIKey, "", "API key to authenticate with (env "+envAPIKey+")")
+				pf.String(flagAPIKey, "", "API key to authenticate with (env "+client.EnvAPIKey+")")
 			}
 
 			cur.AddCommand(next)
@@ -91,6 +133,27 @@ func ensureGroups(root *cobra.Command, path []string) *cobra.Command {
 	}
 
 	return cur
+}
+
+// groupRunE runs for a noun such as `aigw projects`. With no arguments it
+// shows the noun's help. With one, the word was not a subcommand: that is an
+// error, so a typo in a script fails instead of printing help and exiting 0.
+func groupRunE(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return cmd.Help()
+	}
+
+	// Cobra applies its default distance only on the root's own lookup.
+	if cmd.SuggestionsMinimumDistance <= 0 {
+		cmd.SuggestionsMinimumDistance = 2
+	}
+
+	msg := fmt.Sprintf("unknown command %q for %q", args[0], cmd.CommandPath())
+	if suggestions := cmd.SuggestionsFor(args[0]); len(suggestions) > 0 {
+		msg += "; did you mean " + strings.Join(suggestions, " or ") + "?"
+	}
+
+	return errors.New(msg)
 }
 
 func findChild(cmd *cobra.Command, name string) *cobra.Command {
@@ -103,7 +166,7 @@ func findChild(cmd *cobra.Command, name string) *cobra.Command {
 	return nil
 }
 
-func newOperationCommand(op *Operation, base string) *cobra.Command {
+func newOperationCommand(op *Operation, target func() (Target, error)) *cobra.Command {
 	var use strings.Builder
 
 	use.WriteString(op.Command[len(op.Command)-1])
@@ -113,6 +176,10 @@ func newOperationCommand(op *Operation, base string) *cobra.Command {
 	}
 
 	long := op.Long
+	if op.ReplacesNested() {
+		long += "\n\n" + NestedReplaceNote
+	}
+
 	if op.Scope != "" {
 		long += "\n\nRequires scope: " + op.Scope
 	}
@@ -124,7 +191,7 @@ func newOperationCommand(op *Operation, base string) *cobra.Command {
 		Example: requiredExample(op),
 		Args:    cobra.ExactArgs(len(op.Args)),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return run(cmd, op, base, args)
+			return run(cmd, op, target, args)
 		},
 	}
 
@@ -133,7 +200,7 @@ func newOperationCommand(op *Operation, base string) *cobra.Command {
 	for _, p := range op.Params {
 		desc := p.Desc
 		if len(p.Enum) > 0 {
-			desc += " (one of: " + strings.Join(p.Enum, ", ") + ")"
+			desc += " (one of: " + enumList(p.Enum) + ")"
 		}
 
 		if p.Required {
@@ -165,7 +232,7 @@ func newOperationCommand(op *Operation, base string) *cobra.Command {
 	}
 
 	if op.HasBody {
-		fs.StringArrayP(flagData, "d", nil, `Body field as key=value, nested with brackets, e.g. -d "scopes[0][value]=payments:read"`)
+		fs.StringArrayP(flagData, "d", nil, "Body field as key=value, nested with brackets, e.g. -d "+dataExample(op))
 	}
 
 	fs.StringP(flagOutput, "o", "json", "Output format (json)")
@@ -177,72 +244,85 @@ func newOperationCommand(op *Operation, base string) *cobra.Command {
 	return cmd
 }
 
-func run(cmd *cobra.Command, op *Operation, base string, args []string) error {
+func run(cmd *cobra.Command, op *Operation, resolveTarget func() (Target, error), args []string) error {
 	if out, _ := cmd.Flags().GetString(flagOutput); out != "json" {
 		return fmt.Errorf("unsupported output format %q: only json is supported", out)
 	}
 
-	apiKey, err := resolveAPIKey(cmd)
+	target, err := resolveTarget()
 	if err != nil {
 		return err
 	}
 
-	reqURL := buildURL(cmd, op, base, args)
+	target.Warn(cmd.ErrOrStderr())
 
-	var body io.Reader
+	flagKey, _ := cmd.Flags().GetString(flagAPIKey)
+
+	apiKey, err := client.ResolveAPIKey(flagKey, target.Temporary)
+	if errors.Is(err, client.ErrNotLoggedIn) && target.Temporary {
+		return &ExitError{Code: ExitNotAuthenticated, Err: fmt.Errorf(
+			"%s is set: pass --%s or set %s (%s and the saved login are not used)",
+			envTempAPIBase, flagAPIKey, client.EnvTempAPIKey, client.EnvAPIKey)}
+	}
+
+	if err != nil {
+		mapped := exitError(err)
+
+		var exitErr *ExitError
+		if errors.As(mapped, &exitErr) {
+			return mapped
+		}
+
+		// Anything else came from reading the saved key: a corrupt file, a
+		// locked or denied keyring, a timeout. Exit 3 all the same, so a
+		// script treating 3 as "re-authenticate" still does.
+		return &ExitError{Code: ExitNotAuthenticated, Err: fmt.Errorf(
+			"read the saved API key: %w; run `aigw login` again, or set %s", err, client.EnvAPIKey)}
+	}
+
+	req := &client.Request{
+		Method:     op.Method,
+		Path:       op.Path,
+		PathParams: map[string]string{},
+		Query:      url.Values{},
+		Scope:      op.Scope,
+	}
+
+	for i, a := range op.Args {
+		req.PathParams[a.Name] = args[i]
+	}
+
+	for _, p := range op.Params {
+		switch p.In {
+		case InPath:
+			req.PathParams[p.Name], _ = cmd.Flags().GetString(p.Flag)
+		case InQuery:
+			if cmd.Flags().Changed(p.Flag) {
+				req.Query.Set(p.Name, cmd.Flags().Lookup(p.Flag).Value.String())
+			}
+		}
+	}
 
 	if op.HasBody {
-		payload, bodyErr := buildBody(cmd, op)
-		if bodyErr != nil {
-			return bodyErr
+		req.Body, err = buildBody(cmd, op)
+		if err != nil {
+			return err
 		}
-
-		raw, encErr := json.Marshal(payload)
-		if encErr != nil {
-			return fmt.Errorf("encode request body: %w", encErr)
-		}
-
-		body = bytes.NewReader(raw)
 	}
 
 	if op.Method == http.MethodDelete {
-		confirmErr := confirmDelete(cmd, op, args)
-		if confirmErr != nil {
-			return confirmErr
+		err = confirmDelete(cmd, op, args)
+		if err != nil {
+			return err
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(cmd.Context(), requestTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, op.Method, reqURL, body) //nolint:gosec // TEMP: base can come from AIGW_TEMP_API_BASE; see AddAll
+	body, err := client.New(target.BaseURL, apiKey).Do(cmd.Context(), req)
 	if err != nil {
-		return fmt.Errorf("build request: %w", err)
+		return exitError(err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-	req.Header.Set("Accept", "application/json")
-
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-
-	resp, err := http.DefaultClient.Do(req) //nolint:gosec // TEMP: see AddAll
-	if err != nil {
-		return fmt.Errorf("%s %s: %w", op.Method, op.Path, err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read response: %w", err)
-	}
-
-	if resp.StatusCode >= http.StatusBadRequest {
-		return responseError(op, resp.StatusCode, respBody)
-	}
-
-	return printJSON(cmd.OutOrStdout(), respBody)
+	return printJSON(cmd.OutOrStdout(), body)
 }
 
 // requiredExample shows the command with every unconditionally required
@@ -250,7 +330,7 @@ func run(cmd *cobra.Command, op *Operation, base string, args []string) error {
 // required only inside an optional object are not listed; the server reports
 // those.
 func requiredExample(op *Operation) string {
-	if len(op.Args) == 0 && !slices.ContainsFunc(op.Params, func(p Param) bool { return p.Required }) {
+	if len(op.Args) == 0 && len(op.RequiredLists) == 0 && !slices.ContainsFunc(op.Params, func(p Param) bool { return p.Required }) {
 		return ""
 	}
 
@@ -279,63 +359,73 @@ func requiredExample(op *Operation) string {
 		}
 	}
 
-	return b.String()
-}
-
-// resolveAPIKey takes the key from --api-key, then AIGW_API_KEY, then the key
-// `aigw login` saved.
-func resolveAPIKey(cmd *cobra.Command) (string, error) {
-	if v, _ := cmd.Flags().GetString(flagAPIKey); v != "" {
-		return v, nil
-	}
-
-	if v := os.Getenv(envAPIKey); v != "" {
-		return v, nil
-	}
-
-	dir, err := config.Dir()
-	if err != nil {
-		return "", err
-	}
-
-	key, err := credentials.Load(dir, config.DefaultProfile)
-	if errors.Is(err, credentials.ErrNotLoggedIn) {
-		return "", &ExitError{Code: ExitNotAuthenticated, Err: fmt.Errorf("not logged in: run `aigw login`, pass --%s, or set %s", flagAPIKey, envAPIKey)}
-	}
-
-	if err != nil {
-		return "", &ExitError{Code: ExitNotAuthenticated, Err: err}
-	}
-
-	return key, nil
-}
-
-func buildURL(cmd *cobra.Command, op *Operation, base string, args []string) string {
-	path := op.Path
-	for i, a := range op.Args {
-		path = strings.Replace(path, "{"+a.Name+"}", url.PathEscape(args[i]), 1)
-	}
-
-	query := url.Values{}
-
-	for _, p := range op.Params {
-		switch p.In {
-		case InPath:
-			v, _ := cmd.Flags().GetString(p.Flag)
-			path = strings.Replace(path, "{"+p.Name+"}", url.PathEscape(v), 1)
-		case InQuery:
-			if cmd.Flags().Changed(p.Flag) {
-				query.Set(p.Name, cmd.Flags().Lookup(p.Flag).Value.String())
-			}
+	for _, list := range op.RequiredLists {
+		if field := firstField(op, list+"[]."); field != "" {
+			b.WriteString(` -d "` + bracketKey(field) + "=" + exampleValue(op, field) + `"`)
 		}
 	}
 
-	u := strings.TrimSuffix(base, "/") + path
-	if len(query) > 0 {
-		u += "?" + query.Encode()
+	return b.String()
+}
+
+// dataExample is a -d example built from one of op's own fields: a field in
+// a list of objects if there is one, since only -d can set those.
+func dataExample(op *Operation) string {
+	field := firstField(op, "")
+	if listField := firstField(op, "[]."); listField != "" {
+		field = listField
 	}
 
-	return u
+	if field == "" {
+		return `"key=value"`
+	}
+
+	return `"` + bracketKey(field) + "=" + exampleValue(op, field) + `"`
+}
+
+// exampleValue is a placeholder named after the field, or, for a field with a
+// fixed set of values, the first real one, so the example works as written.
+func exampleValue(op *Operation, field string) string {
+	for _, v := range op.FieldEnums[field] {
+		if v != "" {
+			return v
+		}
+	}
+
+	return "<" + field[strings.LastIndex(field, ".")+1:] + ">"
+}
+
+// firstField is the alphabetically first Fields path containing sub, so help
+// text is the same on every run.
+func firstField(op *Operation, sub string) string {
+	var paths []string
+
+	for path := range op.Fields {
+		if strings.Contains(path, sub) && !strings.HasSuffix(path, "[]") {
+			paths = append(paths, path)
+		}
+	}
+
+	slices.Sort(paths)
+
+	if len(paths) == 0 {
+		return ""
+	}
+
+	return paths[0]
+}
+
+// bracketKey writes a Fields path the way -d takes it: "scopes[].value"
+// becomes "scopes[0][value]".
+func bracketKey(path string) string {
+	path = strings.ReplaceAll(path, "[]", "[0]")
+
+	parts := strings.Split(path, ".")
+	for i := 1; i < len(parts); i++ {
+		parts[i] = "[" + parts[i] + "]"
+	}
+
+	return strings.Join(parts, "")
 }
 
 // buildBody assembles the request body from body flags first, then -d values,
@@ -364,6 +454,10 @@ func buildBody(cmd *cobra.Command, op *Operation) (map[string]any, error) {
 
 			items := make([]any, 0, len(raw))
 			for _, r := range raw {
+				if len(p.Enum) > 0 && !slices.Contains(p.Enum, r) {
+					return nil, fmt.Errorf("--%s: %q is not one of: %s", p.Flag, r, enumList(p.Enum))
+				}
+
 				item, coerceErr := coerce(strings.TrimPrefix(p.Type, ListPrefix), r)
 				if coerceErr != nil {
 					return nil, fmt.Errorf("--%s: %w", p.Flag, coerceErr)
@@ -376,7 +470,7 @@ func buildBody(cmd *cobra.Command, op *Operation) (map[string]any, error) {
 		default:
 			s, _ := cmd.Flags().GetString(p.Flag)
 			if len(p.Enum) > 0 && !slices.Contains(p.Enum, s) {
-				return nil, fmt.Errorf("--%s: %q is not one of: %s", p.Flag, s, strings.Join(p.Enum, ", "))
+				return nil, fmt.Errorf("--%s: %q is not one of: %s", p.Flag, s, enumList(p.Enum))
 			}
 
 			v = s
@@ -390,15 +484,10 @@ func buildBody(cmd *cobra.Command, op *Operation) (map[string]any, error) {
 
 	data, _ := cmd.Flags().GetStringArray(flagData)
 	for _, d := range data {
-		root, err = applyData(root, op.Fields, d)
+		root, err = applyData(root, op, d)
 		if err != nil {
 			return nil, fmt.Errorf("-d %q: %w", d, err)
 		}
-	}
-
-	err = checkNoHoles(root)
-	if err != nil {
-		return nil, err
 	}
 
 	return root.(map[string]any), nil
@@ -415,8 +504,8 @@ func confirmDelete(cmd *cobra.Command, op *Operation, args []string) error {
 	}
 
 	in, ok := cmd.InOrStdin().(*os.File)
-	if !ok || !isTerminal(in) {
-		return fmt.Errorf("refusing to run %q without --%s when input is not a terminal", target, flagConfirm)
+	if !ok || !prompt.IsTerminal(in) {
+		return fmt.Errorf("refusing to run %q without --%s when input is not a terminal%s", target, flagConfirm, prompt.NotTerminalHint())
 	}
 
 	fmt.Fprintf(cmd.ErrOrStderr(), "This runs %q and cannot be undone. Continue? [y/N] ", target)
@@ -429,12 +518,6 @@ func confirmDelete(cmd *cobra.Command, op *Operation, args []string) error {
 	return nil
 }
 
-func isTerminal(f *os.File) bool {
-	info, err := f.Stat()
-
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
-}
-
 // printJSON writes an indented copy of body. A body that is empty, as on a 204,
 // prints nothing.
 func printJSON(w io.Writer, body []byte) error {
@@ -444,15 +527,17 @@ func printJSON(w io.Writer, body []byte) error {
 
 	var buf bytes.Buffer
 
+	// The client only returns JSON (see client.ErrNotAPI), so this cannot
+	// fail on a server's say-so.
 	err := json.Indent(&buf, body, "", "  ")
 	if err != nil {
-		// Not JSON: pass it through rather than lose it.
-		buf.Reset()
-		buf.Write(body)
+		return fmt.Errorf("format response: %w", err)
 	}
 
-	buf.WriteByte('\n')
-	_, err = w.Write(buf.Bytes())
+	// One newline at the end. The API's own trailing newline would otherwise
+	// leave a blank line after the closing brace.
+	out := append(bytes.TrimRight(buf.Bytes(), "\r\n"), '\n')
+	_, err = w.Write(out)
 
 	return err
 }
@@ -473,4 +558,20 @@ func kebab(s string) string {
 	}
 
 	return b.String()
+}
+
+// enumList renders allowed values for help and errors. An empty value is
+// shown as "", not as nothing between two commas.
+func enumList(values []string) string {
+	shown := make([]string, len(values))
+
+	for i, v := range values {
+		if v == "" {
+			v = `""`
+		}
+
+		shown[i] = v
+	}
+
+	return strings.Join(shown, ", ")
 }

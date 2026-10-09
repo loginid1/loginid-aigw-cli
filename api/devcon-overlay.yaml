@@ -33,3 +33,35 @@ operations:
 
   resources#listSigningKeys:           { command: resources signing-keys list }
   resources#generateSigningKey:        { command: resources signing-keys create }
+
+  # Agent domain rules: approve or reject agents by the domain they come from.
+  # The project list also shows each resource's own rules.
+  agentDomainRules#list:               { command: projects domain-rules list }
+  agentDomainRules#getProject:         { command: projects domain-rules get }
+  agentDomainRules#setProject:         { command: projects domain-rules set }
+  agentDomainRules#removeProject:      { command: projects domain-rules remove }
+  agentDomainRules#listResource:       { command: resources domain-rules list }
+  agentDomainRules#getResource:        { command: resources domain-rules get }
+  agentDomainRules#setResource:        { command: resources domain-rules set }
+  agentDomainRules#removeResource:     { command: resources domain-rules remove }
+
+  # Agent policy: the project default, and a resource's own policy.
+  agentPolicy#list:                    { command: projects agent-policy list }
+  agentPolicy#getProject:              { command: projects agent-policy get }
+  agentPolicy#setProject:              { command: projects agent-policy update }
+  agentPolicy#clearProject:            { command: projects agent-policy clear }
+  agentPolicy#getResource:             { command: resources agent-policy get }
+  agentPolicy#setResource:             { command: resources agent-policy update }
+  agentPolicy#clearResource:           { command: resources agent-policy clear }
+
+  # KYA issuer whitelist. `replace` swaps the whole list; `set` writes one entry.
+  kyaIssuerPolicy#listProject:         { command: projects kya-issuers list }
+  kyaIssuerPolicy#replaceProject:      { command: projects kya-issuers replace }
+  kyaIssuerPolicy#getProject:          { command: projects kya-issuers get }
+  kyaIssuerPolicy#setProject:          { command: projects kya-issuers set }
+  kyaIssuerPolicy#removeProject:       { command: projects kya-issuers remove }
+  kyaIssuerPolicy#listResource:        { command: resources kya-issuers list }
+  kyaIssuerPolicy#replaceResource:     { command: resources kya-issuers replace }
+  kyaIssuerPolicy#getResource:         { command: resources kya-issuers get }
+  kyaIssuerPolicy#setResource:         { command: resources kya-issuers set }
+  kyaIssuerPolicy#removeResource:      { command: resources kya-issuers remove }

@@ -2,6 +2,7 @@ package cmd_test
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 
@@ -84,6 +85,24 @@ func TestLoginRejectsBadInput(t *testing.T) {
 	_, err := run(t, "two words", "login", "--with-key-stdin")
 	if err == nil {
 		t.Error("a key with a space was accepted")
+	}
+
+	// Refused, because they break the Authorization header or config.toml.
+	for _, bad := range []string{"aigw_sk_\u65e5\u672c\u8a9e\u65e5\u672c\u8a9e\u65e5\u672c\u8a9e", "aigw_sk_ab\x01cdefghijkl"} {
+		_, err = run(t, bad, "login", "--with-key-stdin")
+		if err == nil || !strings.Contains(err.Error(), "printable ASCII") {
+			t.Errorf("%q: %v", bad, err)
+		}
+	}
+
+	// Refused, not cut to 4096 bytes and saved broken.
+	_, err = run(t, "aigw_sk_"+strings.Repeat("a", 5000), "login", "--with-key-stdin")
+	if err == nil || !strings.Contains(err.Error(), "longer than 4096 bytes") {
+		t.Errorf("an oversized key: %v", err)
+	}
+
+	if got, _ := credentials.Load(os.Getenv("XDG_CONFIG_HOME")+"/aigw", config.DefaultProfile); got != "" {
+		t.Errorf("an oversized key was saved: %d bytes", len(got))
 	}
 }
 

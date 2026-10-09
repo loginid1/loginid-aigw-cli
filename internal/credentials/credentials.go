@@ -52,8 +52,21 @@ func Save(dir, profile, key string, insecure bool) (string, error) {
 		where = fileStorePath(dir)
 		err = writeFileKey(dir, profile, key)
 	} else {
-		err = keyring.Set(keyringService, profile, key)
-		if err != nil {
+		err = keyringSet(profile, key)
+
+		switch {
+		case errors.Is(err, errTimeout):
+			// The store may still save the key after we stop waiting. With no
+			// earlier login, record the profile anyway, so that logout, or a
+			// later login to another store, finds and removes a key that
+			// lands late instead of leaving it orphaned.
+			if !hadPrev {
+				cfg[profile] = p
+				_ = config.Save(dir, cfg)
+			}
+
+			err = fmt.Errorf("save to %s: %w; it may still have saved the key. Run `aigw logout`, then try again", storeName(), err)
+		case err != nil:
 			err = fmt.Errorf("save to %s: %w\n"+
 				"No usable credential store here. Set AIGW_API_KEY instead, or run "+
 				"`aigw login --insecure-storage` to keep the key in a plain file", storeName(), err)
@@ -64,15 +77,20 @@ func Save(dir, profile, key string, insecure bool) (string, error) {
 		return "", err
 	}
 
-	if hadPrev && prev.Storage != p.Storage {
-		_ = deleteKey(dir, profile, prev.Storage)
-	}
-
 	cfg[profile] = p
 
 	err = config.Save(dir, cfg)
 	if err != nil {
 		return "", err
+	}
+
+	// After the new key is in place, so a failure here cannot lose both. It
+	// is still an error: the user believes the old key is gone.
+	if hadPrev && prev.Storage != p.Storage {
+		err = deleteKey(dir, profile, prev.Storage)
+		if err != nil {
+			return where, fmt.Errorf("saved the new key to %s, but the old one is still in its previous store: %w", where, err)
+		}
 	}
 
 	return where, nil
@@ -96,7 +114,7 @@ func Load(dir, profile string) (string, error) {
 	case config.StorageFile:
 		key, err = readFileKey(dir, profile)
 	default:
-		key, err = keyring.Get(keyringService, profile)
+		key, err = keyringGet(profile)
 		if errors.Is(err, keyring.ErrNotFound) {
 			err = ErrNotLoggedIn
 		}
@@ -113,27 +131,80 @@ func Load(dir, profile string) (string, error) {
 	return key, nil
 }
 
-// Delete removes profile's key and its config entry. It reports false when
-// there was nothing to remove.
-func Delete(dir, profile string) (bool, error) {
+// Deleted says what Delete did.
+type Deleted struct {
+	// Removed is false when there was nothing to remove.
+	Removed bool
+	// MovedAside lists files that could not be read and were renamed.
+	MovedAside []string
+	// Warnings are problems that did not stop the reset.
+	Warnings []string
+}
+
+// Delete removes profile's key and its config entry.
+//
+// An unreadable config.toml does not stop it, because login itself tells the
+// user to run logout then. It removes the profile's key from both stores,
+// since it cannot tell which one was used; a keyring that is missing or fails
+// is only a warning, as on a server with no Secret Service; an unreadable
+// credentials file is moved aside like the config.
+func Delete(dir, profile string) (Deleted, error) {
 	cfg, err := config.Load(dir)
+	if errors.Is(err, config.ErrUnreadable) {
+		return reset(dir, profile)
+	}
+
 	if err != nil {
-		return false, err
+		return Deleted{}, err
 	}
 
 	p, ok := cfg[profile]
 	if !ok {
-		return false, nil
+		return Deleted{}, nil
 	}
 
 	err = deleteKey(dir, profile, p.Storage)
 	if err != nil {
-		return false, err
+		return Deleted{}, err
 	}
 
 	delete(cfg, profile)
 
-	return true, config.Save(dir, cfg)
+	return Deleted{Removed: true}, config.Save(dir, cfg)
+}
+
+func reset(dir, profile string) (Deleted, error) {
+	var d Deleted
+
+	err := deleteKey(dir, profile, config.StorageKeyring)
+	if err != nil {
+		d.Warnings = append(d.Warnings, err.Error())
+	}
+
+	err = deleteFileKey(dir, profile)
+	if err != nil {
+		moved, moveErr := config.MoveAside(dir, credentialsFile)
+		if moveErr != nil {
+			return d, moveErr
+		}
+
+		if moved != "" {
+			d.MovedAside = append(d.MovedAside, moved)
+		}
+	}
+
+	moved, err := config.MoveAside(dir, config.FileName)
+	if err != nil {
+		return d, err
+	}
+
+	if moved != "" {
+		d.MovedAside = append(d.MovedAside, moved)
+	}
+
+	d.Removed = true
+
+	return d, nil
 }
 
 // Hint masks key for display: "aigw_sk_…Xk7Q". Every key shares the prefix,
@@ -141,7 +212,10 @@ func Delete(dir, profile string) (bool, error) {
 func Hint(key string) string {
 	const tail = 4
 
-	rest := strings.TrimPrefix(key, keyPrefix)
+	// Runes, not bytes: cutting a multi-byte character in half would write
+	// invalid UTF-8 into config.toml. Login only accepts ASCII keys, but a key
+	// from elsewhere must not be able to break the file either.
+	rest := []rune(strings.TrimPrefix(key, keyPrefix))
 	if len(rest) <= tail*2 {
 		return "…"
 	}
@@ -151,7 +225,24 @@ func Hint(key string) string {
 		head = keyPrefix
 	}
 
-	return head + "…" + rest[len(rest)-tail:]
+	return head + "…" + string(rest[len(rest)-tail:])
+}
+
+// CheckKey refuses a key that cannot work: one with a space or with anything
+// other than printable ASCII. A control character breaks the Authorization
+// header, and a multi-byte character breaks the hint written to config.toml.
+func CheckKey(key string) error {
+	if key == "" {
+		return errors.New("the API key is empty")
+	}
+
+	for _, r := range key {
+		if r < 0x21 || r > 0x7e {
+			return fmt.Errorf("the API key may only contain printable ASCII characters, with no spaces; found %q", r)
+		}
+	}
+
+	return nil
 }
 
 // LooksLikeKey reports whether key carries devcon's marker.
@@ -162,7 +253,7 @@ func deleteKey(dir, profile, storage string) error {
 		return deleteFileKey(dir, profile)
 	}
 
-	err := keyring.Delete(keyringService, profile)
+	err := keyringDelete(profile)
 	if err != nil && !errors.Is(err, keyring.ErrNotFound) {
 		return fmt.Errorf("delete from %s: %w", storeName(), err)
 	}
@@ -183,7 +274,10 @@ func storeName() string {
 
 // ---- insecure storage: a 0600 TOML file of profile = key ----
 
-func fileStorePath(dir string) string { return filepath.Join(dir, "credentials.toml") }
+// credentialsFile holds keys saved with --insecure-storage.
+const credentialsFile = "credentials.toml"
+
+func fileStorePath(dir string) string { return filepath.Join(dir, credentialsFile) }
 
 func readFileKeys(dir string) (map[string]string, error) {
 	keys := map[string]string{}

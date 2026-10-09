@@ -12,6 +12,7 @@ import (
 
 	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/config"
 	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/credentials"
+	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/prompt"
 )
 
 // maxKeyBytes bounds what --with-key-stdin reads, so a wrong pipe cannot fill
@@ -95,10 +96,11 @@ func newLoginCommand() *cobra.Command {
 func confirmReplace(cmd *cobra.Command, hint string, fromStdin bool) error {
 	refuse := fmt.Errorf("a key (%s) is already saved: pass --confirm to replace it, or run `aigw logout` first", hint)
 
-	f, isFile := cmd.InOrStdin().(*os.File)
-	if fromStdin || !isFile || !term.IsTerminal(int(f.Fd())) {
-		return refuse
+	if fromStdin || !prompt.IsTerminal(cmd.InOrStdin()) {
+		return fmt.Errorf("%w%s", refuse, prompt.NotTerminalHint())
 	}
+
+	f, _ := cmd.InOrStdin().(*os.File)
 
 	fmt.Fprintf(cmd.ErrOrStderr(), "A key (%s) is already saved. Replace it? [y/N] ", hint)
 
@@ -147,13 +149,19 @@ func readKey(cmd *cobra.Command, fromStdin bool) (string, error) {
 
 	switch {
 	case fromStdin:
-		b, err := io.ReadAll(io.LimitReader(in, maxKeyBytes))
+		// One byte past the limit, so an oversized key is refused rather
+		// than cut short and saved broken.
+		b, err := io.ReadAll(io.LimitReader(in, maxKeyBytes+1))
 		if err != nil {
 			return "", fmt.Errorf("read API key: %w", err)
 		}
 
+		if len(b) > maxKeyBytes {
+			return "", fmt.Errorf("input is longer than %d bytes; is this the right file?", maxKeyBytes)
+		}
+
 		raw = b
-	case isFile && term.IsTerminal(int(f.Fd())):
+	case isFile && prompt.IsTerminal(f):
 		fmt.Fprint(cmd.ErrOrStderr(), "Paste your API key (input is hidden): ")
 
 		b, err := term.ReadPassword(int(f.Fd()))
@@ -166,6 +174,10 @@ func readKey(cmd *cobra.Command, fromStdin bool) (string, error) {
 
 		raw = b
 	default:
+		if hint := prompt.NotTerminalHint(); hint != "" {
+			return "", errors.New("input is not a terminal" + hint)
+		}
+
 		return "", errors.New("input is not a terminal: pass --with-key-stdin to read the key from a pipe")
 	}
 
@@ -174,8 +186,9 @@ func readKey(cmd *cobra.Command, fromStdin bool) (string, error) {
 		return "", errors.New("no API key given")
 	}
 
-	if strings.ContainsAny(key, " \t\r\n") {
-		return "", errors.New("the API key must be a single line with no spaces")
+	err := credentials.CheckKey(key)
+	if err != nil {
+		return "", err
 	}
 
 	return key, nil
@@ -192,12 +205,20 @@ func newLogoutCommand() *cobra.Command {
 				return err
 			}
 
-			removed, err := credentials.Delete(dir, config.DefaultProfile)
+			deleted, err := credentials.Delete(dir, config.DefaultProfile)
 			if err != nil {
 				return err
 			}
 
-			if removed {
+			for _, w := range deleted.Warnings {
+				fmt.Fprintln(cmd.ErrOrStderr(), "warning:", w)
+			}
+
+			for _, moved := range deleted.MovedAside {
+				fmt.Fprintf(cmd.ErrOrStderr(), "Could not read a file; moved it to %s.\n", moved)
+			}
+
+			if deleted.Removed {
 				fmt.Fprintln(cmd.ErrOrStderr(), "Removed the saved API key.")
 			} else {
 				fmt.Fprintln(cmd.ErrOrStderr(), "No saved API key.")

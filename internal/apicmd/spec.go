@@ -6,6 +6,11 @@
 // package, and never by regenerating.
 package apicmd
 
+import (
+	"net/http"
+	"strings"
+)
+
 // Operation is one API call, as the generator read it from the spec and the
 // overlay.
 type Operation struct {
@@ -27,6 +32,12 @@ type Operation struct {
 	// Fields maps every settable body path to its type, for -d. Array elements
 	// are written "[]", e.g. "scopes[].value".
 	Fields map[string]string
+	// FieldEnums holds the allowed values of the Fields that have a fixed set,
+	// so -d refuses what the matching flag would.
+	FieldEnums map[string][]string
+	// RequiredLists names required top-level lists of objects. They have no
+	// flag, so help points at -d for them.
+	RequiredLists []string
 	// HasBody is true when the operation takes a JSON request body.
 	HasBody bool
 }
@@ -61,3 +72,26 @@ const (
 	TypeBoolean = "boolean"
 	ListPrefix  = "[]"
 )
+
+// NestedReplaceNote warns that a PATCH replaces nested objects whole. The API
+// merges top-level fields, but an object you send (exchange, options, ...)
+// replaces the stored one, so its fields you leave out are reset, not kept.
+const NestedReplaceNote = "Only the top-level fields you send change. An object you send " +
+	"(for example exchange or options) replaces the stored one whole: its fields you " +
+	"leave out are reset. Read the current value first and send the full object."
+
+// ReplacesNested reports whether op is a PATCH whose body has nested objects,
+// which the API replaces whole (see NestedReplaceNote).
+func (op *Operation) ReplacesNested() bool {
+	if op.Method != http.MethodPatch {
+		return false
+	}
+
+	for path := range op.Fields {
+		if strings.Contains(path, ".") {
+			return true
+		}
+	}
+
+	return false
+}

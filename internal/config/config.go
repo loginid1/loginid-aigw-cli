@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -39,8 +40,12 @@ type Config map[string]Profile
 
 // Dir is $XDG_CONFIG_HOME/aigw, or ~/.config/aigw when that is unset. The same
 // path is used on every OS, as the gh and Stripe CLIs do, so docs can name it.
+//
+// A relative XDG_CONFIG_HOME is ignored, as the XDG spec requires: it would
+// put the credentials file inside whatever directory aigw runs in, where it
+// can end up committed.
 func Dir() (string, error) {
-	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" && filepath.IsAbs(xdg) {
 		return filepath.Join(xdg, "aigw"), nil
 	}
 
@@ -52,7 +57,7 @@ func Dir() (string, error) {
 	return filepath.Join(home, ".config", "aigw"), nil
 }
 
-func path(dir string) string { return filepath.Join(dir, "config.toml") }
+func path(dir string) string { return filepath.Join(dir, FileName) }
 
 // Load reads the config in dir. A missing file is an empty config.
 func Load(dir string) (Config, error) {
@@ -63,12 +68,44 @@ func Load(dir string) (Config, error) {
 		return cfg, nil
 	}
 
-	if err != nil {
+	// Permission is the user's to fix. Anything else (not TOML, the wrong
+	// shape, a directory where the file should be) logout can reset.
+	if errors.Is(err, fs.ErrPermission) {
 		return nil, fmt.Errorf("read %s: %w", path(dir), err)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s: %w; run `aigw logout` to reset it", ErrUnreadable, path(dir), err)
 	}
 
 	return cfg, nil
 }
+
+// ErrUnreadable means config.toml exists but cannot be used.
+var ErrUnreadable = errors.New("config file is unreadable")
+
+// MoveAside renames file in dir to file.broken-<time>, so the next write
+// starts clean while the old content stays for a look. The time keeps an
+// earlier broken copy from being overwritten. It returns the new path, or ""
+// when there was no file.
+func MoveAside(dir, file string) (string, error) {
+	src := filepath.Join(dir, file)
+	dest := src + ".broken-" + time.Now().Format("20060102-150405.000")
+
+	err := os.Rename(src, dest)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+
+	if err != nil {
+		return "", fmt.Errorf("move %s aside: %w", src, err)
+	}
+
+	return dest, nil
+}
+
+// FileName is config.toml's name inside Dir.
+const FileName = "config.toml"
 
 // Save writes cfg to dir, replacing the file in one step so a crash cannot
 // leave half a config behind.
@@ -95,6 +132,21 @@ func CreateTemp(dir string) (*os.File, error) {
 	err := os.MkdirAll(dir, 0o700)
 	if err != nil {
 		return nil, fmt.Errorf("create %s: %w", dir, err)
+	}
+
+	// MkdirAll leaves an existing directory as it is. If others can write to
+	// it, they can rename their own config and key files over these, so
+	// tighten it before writing anything into it.
+	info, err := os.Stat(dir)
+	if err != nil {
+		return nil, fmt.Errorf("check %s: %w", dir, err)
+	}
+
+	if info.Mode().Perm()&0o077 != 0 {
+		err = os.Chmod(dir, 0o700)
+		if err != nil {
+			return nil, fmt.Errorf("%s is accessible to other users and could not be restricted: %w", dir, err)
+		}
 	}
 
 	// CreateTemp opens with 0600.

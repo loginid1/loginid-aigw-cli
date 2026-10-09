@@ -34,11 +34,15 @@ var reserved = []string{"api-key", "data", "output", "confirm", "help"}
 
 var methods = []string{"get", "post", "put", "patch", "delete"}
 
+// maxNesting bounds how deep body schemas may nest.
+const maxNesting = 10
+
 func main() {
 	specPath := flag.String("spec", "", "path to the OpenAPI 3 spec (yaml)")
 	overlayPath := flag.String("overlay", "api/devcon-overlay.yaml", "path to the overlay")
 	ref := flag.String("ref", "", "spec source, recorded in the output header")
 	out := flag.String("out", "internal/apicmd/operations_gen.go", "output file")
+
 	flag.Parse()
 
 	if *specPath == "" || *ref == "" {
@@ -50,7 +54,8 @@ func main() {
 		log.Fatalf("gen: %v", err)
 	}
 
-	if err := os.WriteFile(*out, src, 0o600); err != nil {
+	err = os.WriteFile(*out, src, 0o600)
+	if err != nil {
 		log.Fatalf("gen: %v", err)
 	}
 }
@@ -109,6 +114,7 @@ type outOp struct {
 	Command                              []string
 	Args, Params                         []outParam
 	Fields                               []field
+	RequiredLists                        []string
 	HasBody                              bool
 }
 
@@ -118,16 +124,30 @@ type outParam struct {
 	Enum                       []string
 }
 
-type field struct{ Path, Type string }
-
-func generate(specPath, overlayPath, ref string) ([]byte, error) {
-	var s spec
-	if err := readYAML(specPath, &s); err != nil {
-		return nil, err
+// HasFieldEnums reports whether any -d field has a fixed set of values.
+func (o *outOp) HasFieldEnums() bool {
+	for _, f := range o.Fields {
+		if len(f.Enum) > 0 {
+			return true
+		}
 	}
 
-	var ov overlay
-	if err := readYAML(overlayPath, &ov); err != nil {
+	return false
+}
+
+type field struct {
+	Path, Type string
+	Enum       []string
+}
+
+func generate(specPath, overlayPath, ref string) ([]byte, error) {
+	var (
+		s  spec
+		ov overlay
+	)
+
+	err := errors.Join(readYAML(specPath, &s), readYAML(overlayPath, &ov))
+	if err != nil {
 		return nil, err
 	}
 
@@ -150,8 +170,10 @@ func generate(specPath, overlayPath, ref string) ([]byte, error) {
 			}
 
 			var o operation
-			if err := node.Decode(&o); err != nil {
-				return nil, fmt.Errorf("%s %s: %w", method, path, err)
+
+			decodeErr := node.Decode(&o)
+			if decodeErr != nil {
+				return nil, fmt.Errorf("%s %s: %w", method, path, decodeErr)
 			}
 
 			entry, ok := ov.Operations[o.OperationID]
@@ -169,9 +191,9 @@ func generate(specPath, overlayPath, ref string) ([]byte, error) {
 
 			cmds[entry.Command] = o.OperationID
 
-			op, err := buildOp(&s, path, method, &o, entry.Command)
-			if err != nil {
-				errs = append(errs, fmt.Errorf("%s: %w", o.OperationID, err))
+			op, opErr := buildOp(&s, path, method, &o, entry.Command)
+			if opErr != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", o.OperationID, opErr))
 
 				continue
 			}
@@ -186,7 +208,8 @@ func generate(specPath, overlayPath, ref string) ([]byte, error) {
 		}
 	}
 
-	if err := errors.Join(errs...); err != nil {
+	err = errors.Join(errs...)
+	if err != nil {
 		return nil, err
 	}
 
@@ -197,8 +220,10 @@ func generate(specPath, overlayPath, ref string) ([]byte, error) {
 	tpl := template.Must(template.New("gen").Funcs(template.FuncMap{"q": quote, "qs": quoteList}).Parse(tplText))
 
 	var buf bytes.Buffer
-	if err := tpl.Execute(&buf, map[string]any{"Ref": ref, "Base": s.Servers[0].URL, "Ops": ops}); err != nil {
-		return nil, err
+
+	err1 := tpl.Execute(&buf, map[string]any{"Ref": ref, "Base": s.Servers[0].URL, "Ops": ops})
+	if err1 != nil {
+		return nil, err1
 	}
 
 	src, err := format.Source(buf.Bytes())
@@ -247,27 +272,29 @@ func buildOp(s *spec, path, method string, o *operation, command string) (outOp,
 
 	for _, p := range o.Parameters {
 		switch p.In {
-		case "path":
+		case inPath:
 			// The id a path ends with is the thing the command acts on, so it
 			// is positional: `aigw resources get <resource-id>`. Parent ids
 			// before it are flags: `--project-id`.
 			if strings.HasSuffix(path, "/{"+p.Name+"}") {
-				op.Args = append(op.Args, outParam{Name: p.Name, In: "path", Type: "string", Required: true, Desc: p.Description})
+				op.Args = append(op.Args, outParam{Name: p.Name, In: inPath, Type: tString, Required: true, Desc: p.Description})
 
 				continue
 			}
 
-			if err := addFlag(outParam{Name: p.Name, Flag: kebab(p.Name), In: "path", Type: "string", Required: true, Desc: p.Description}); err != nil {
-				return outOp{}, err
+			err2 := addFlag(outParam{Name: p.Name, Flag: kebab(p.Name), In: inPath, Type: tString, Required: true, Desc: p.Description})
+			if err2 != nil {
+				return outOp{}, err2
 			}
-		case "query":
+		case inQuery:
 			typ, err := scalarType(s, p.Schema)
 			if err != nil {
 				return outOp{}, fmt.Errorf("query param %s: %w", p.Name, err)
 			}
 
-			if err := addFlag(outParam{Name: p.Name, Flag: kebab(p.Name), In: "query", Type: typ, Required: p.Required, Desc: p.Description}); err != nil {
-				return outOp{}, err
+			err3 := addFlag(outParam{Name: p.Name, Flag: kebab(p.Name), In: inQuery, Type: typ, Required: p.Required, Desc: p.Description})
+			if err3 != nil {
+				return outOp{}, err3
 			}
 		case "header":
 			// The only header is Authorization, which the engine sets.
@@ -290,12 +317,38 @@ func buildOp(s *spec, path, method string, o *operation, command string) (outOp,
 		}
 
 		var fields []field
-		if err := walkBody(s, body, "", "", body.Required, &fields, addFlag); err != nil {
-			return outOp{}, err
+
+		err4 := walkBody(s, body, "", "", body.Required, &fields, addFlag)
+		if err4 != nil {
+			return outOp{}, err4
 		}
 
 		slices.SortFunc(fields, func(a, b field) int { return strings.Compare(a.Path, b.Path) })
 		op.Fields = fields
+
+		// Required top-level lists of objects have no flag, so help must
+		// point at -d for them.
+		for _, name := range body.Required {
+			prop, err := resolve(s, body.Properties[name])
+			if err != nil {
+				return outOp{}, err
+			}
+
+			if prop.Type != tArray {
+				continue
+			}
+
+			item, err := resolve(s, prop.Items)
+			if err != nil {
+				return outOp{}, err
+			}
+
+			if item.Type == tObject {
+				op.RequiredLists = append(op.RequiredLists, name)
+			}
+		}
+
+		slices.Sort(op.RequiredLists)
 	}
 
 	return op, nil
@@ -305,6 +358,12 @@ func buildOp(s *spec, path, method string, o *operation, command string) (outOp,
 // named by their dotted path. Every settable path, including the ones inside
 // lists of objects that no flag can express, is recorded in fields for -d.
 func walkBody(s *spec, obj *schema, apiPrefix, flagPrefix string, required []string, fields *[]field, addFlag func(outParam) error) error {
+	// resolve only bounds $ref-to-$ref chains; a schema whose property points
+	// back at itself would otherwise recurse for ever.
+	if strings.Count(apiPrefix, ".") > maxNesting {
+		return fmt.Errorf("%s: nested more than %d levels; is the schema recursive?", apiPrefix, maxNesting)
+	}
+
 	for _, name := range sortedKeys(obj.Properties) {
 		prop, err := resolve(s, obj.Properties[name])
 		if err != nil {
@@ -315,7 +374,7 @@ func walkBody(s *spec, obj *schema, apiPrefix, flagPrefix string, required []str
 		desc := firstNonEmpty(obj.Properties[name].Description, prop.Description)
 
 		switch prop.Type {
-		case "object":
+		case tObject:
 			// As in the Stripe CLI, a nested field counts as required only
 			// when every object above it is required too. "Required when the
 			// parent is sent" is the server's to check.
@@ -324,32 +383,38 @@ func walkBody(s *spec, obj *schema, apiPrefix, flagPrefix string, required []str
 				nested = prop.Required
 			}
 
-			if err := walkBody(s, prop, apiName+".", flagName+".", nested, fields, addFlag); err != nil {
-				return err
+			err5 := walkBody(s, prop, apiName+".", flagName+".", nested, fields, addFlag)
+			if err5 != nil {
+				return err5
 			}
-		case "array":
+		case tArray:
 			item, err := resolve(s, prop.Items)
 			if err != nil {
 				return fmt.Errorf("%s: %w", apiName, err)
 			}
 
-			if item.Type == "object" {
+			if item.Type == tObject {
 				// Only -d can set a list of objects.
-				if err := walkFields(s, item, apiName+"[]", fields); err != nil {
-					return err
+				err6 := walkFields(s, item, apiName+"[]", fields)
+				if err6 != nil {
+					return err6
 				}
 
 				continue
 			}
 
-			*fields = append(*fields, field{apiName + "[]", item.Type})
-			if err := addFlag(outParam{Name: apiName, Flag: flagName, In: "body", Type: "[]" + item.Type, Required: slices.Contains(required, name), Enum: item.Enum, Desc: desc}); err != nil {
-				return err
+			*fields = append(*fields, field{apiName + "[]", item.Type, item.Enum})
+
+			err7 := addFlag(outParam{Name: apiName, Flag: flagName, In: "body", Type: "[]" + item.Type, Required: slices.Contains(required, name), Enum: item.Enum, Desc: desc})
+			if err7 != nil {
+				return err7
 			}
 		default:
-			*fields = append(*fields, field{apiName, prop.Type})
-			if err := addFlag(outParam{Name: apiName, Flag: flagName, In: "body", Type: prop.Type, Required: slices.Contains(required, name), Enum: prop.Enum, Desc: desc}); err != nil {
-				return err
+			*fields = append(*fields, field{apiName, prop.Type, prop.Enum})
+
+			err8 := addFlag(outParam{Name: apiName, Flag: flagName, In: "body", Type: prop.Type, Required: slices.Contains(required, name), Enum: prop.Enum, Desc: desc})
+			if err8 != nil {
+				return err8
 			}
 		}
 	}
@@ -359,6 +424,10 @@ func walkBody(s *spec, obj *schema, apiPrefix, flagPrefix string, required []str
 
 // walkFields records the -d paths inside a list element, without flags.
 func walkFields(s *spec, obj *schema, prefix string, fields *[]field) error {
+	if strings.Count(prefix, ".")+strings.Count(prefix, "[]") > maxNesting {
+		return fmt.Errorf("%s: nested more than %d levels; is the schema recursive?", prefix, maxNesting)
+	}
+
 	for _, name := range sortedKeys(obj.Properties) {
 		prop, err := resolve(s, obj.Properties[name])
 		if err != nil {
@@ -368,27 +437,29 @@ func walkFields(s *spec, obj *schema, prefix string, fields *[]field) error {
 		path := prefix + "." + name
 
 		switch prop.Type {
-		case "object":
-			if err := walkFields(s, prop, path, fields); err != nil {
-				return err
+		case tObject:
+			err9 := walkFields(s, prop, path, fields)
+			if err9 != nil {
+				return err9
 			}
-		case "array":
+		case tArray:
 			item, err := resolve(s, prop.Items)
 			if err != nil {
 				return err
 			}
 
-			if item.Type == "object" {
-				if err := walkFields(s, item, path+"[]", fields); err != nil {
-					return err
+			if item.Type == tObject {
+				err10 := walkFields(s, item, path+"[]", fields)
+				if err10 != nil {
+					return err10
 				}
 
 				continue
 			}
 
-			*fields = append(*fields, field{path + "[]", item.Type})
+			*fields = append(*fields, field{path + "[]", item.Type, item.Enum})
 		default:
-			*fields = append(*fields, field{path, prop.Type})
+			*fields = append(*fields, field{path, prop.Type, prop.Enum})
 		}
 	}
 
@@ -421,7 +492,7 @@ func resolve(s *spec, sc *schema) (*schema, error) {
 	}
 
 	switch sc.Type {
-	case "object", "array", "string", "integer", "number", "boolean":
+	case tObject, tArray, tString, "integer", "number", "boolean":
 		return sc, nil
 	default:
 		return nil, fmt.Errorf("schema type %q not supported", sc.Type)
@@ -434,7 +505,7 @@ func scalarType(s *spec, sc *schema) (string, error) {
 		return "", err
 	}
 
-	if r.Type == "object" || r.Type == "array" {
+	if r.Type == tObject || r.Type == tArray {
 		return "", fmt.Errorf("type %s not supported here", r.Type)
 	}
 
@@ -443,9 +514,9 @@ func scalarType(s *spec, sc *schema) (string, error) {
 
 // describe picks the help text. Goa fills summary with "<method> <service>",
 // which says nothing, so the first sentence of the description is preferred.
-func describe(o *operation) (short, long string) {
-	long = strings.TrimSpace(o.Description)
-	short = long
+func describe(o *operation) (string, string) { //nolint:gocritic // short, then long; named results are banned by nonamedreturns
+	long := strings.TrimSpace(o.Description)
+	short := long
 
 	if i := strings.Index(short, ". "); i >= 0 {
 		short = short[:i]
@@ -454,6 +525,17 @@ func describe(o *operation) (short, long string) {
 	short = strings.TrimSuffix(short, ".")
 	if short == "" {
 		short = o.Summary
+	}
+
+	// One line in a command table. The full text stays in Long.
+	const maxShort = 80
+	if r := []rune(short); len(r) > maxShort {
+		cut := string(r[:maxShort-1])
+		if i := strings.LastIndex(cut, " "); i > maxShort/2 {
+			cut = cut[:i]
+		}
+
+		short = strings.TrimRight(cut, ",;:") + "…"
 	}
 
 	return short, long
@@ -465,8 +547,9 @@ func readYAML(path string, v any) error {
 		return err
 	}
 
-	if err := yaml.Unmarshal(raw, v); err != nil {
-		return fmt.Errorf("%s: %w", path, err)
+	err11 := yaml.Unmarshal(raw, v)
+	if err11 != nil {
+		return fmt.Errorf("%s: %w", path, err11)
 	}
 
 	return nil

@@ -7,7 +7,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -33,7 +36,7 @@ func serve(t *testing.T, status int, reply string) (*httptest.Server, *captured)
 
 	got := &captured{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got.method, got.path, got.auth = r.Method, r.URL.Path, r.Header.Get("Authorization")
+		got.method, got.path, got.auth = r.Method, r.URL.EscapedPath(), r.Header.Get("Authorization")
 
 		raw, _ := io.ReadAll(r.Body)
 		if len(raw) > 0 && json.Unmarshal(raw, &got.body) != nil {
@@ -86,7 +89,7 @@ func TestResourcesCreateBuildsRequest(t *testing.T) {
 		t.Fatalf("resources create: %v", err)
 	}
 
-	if got.method != http.MethodPost || got.path != "/projects/proj-9/resources" {
+	if got.method != http.MethodPost || got.path != "/v1/projects/proj-9/resources" {
 		t.Errorf("got %s %s", got.method, got.path)
 	}
 
@@ -124,7 +127,7 @@ func TestPositionalIDIsTheLastPathSegment(t *testing.T) {
 	}
 
 	// The slash is escaped, so an id cannot walk into another path.
-	if got.path != "/projects/proj-9/resources/res/7" && got.path != "/projects/proj-9/resources/res%2F7" {
+	if got.path != "/v1/projects/proj-9/resources/res%2F7" {
 		t.Errorf("path = %q", got.path)
 	}
 
@@ -136,7 +139,9 @@ func TestPositionalIDIsTheLastPathSegment(t *testing.T) {
 // Not parallel: it clears AIGW_API_KEY, so a key in the developer's shell
 // cannot turn the "no key" case into a real request.
 func TestExitCodes(t *testing.T) {
-	forbidden, _ := serve(t, http.StatusForbidden, `{"msg":"Forbidden","msgCode":"forbidden"}`)
+	// The backend's own wording for each kind of 403.
+	forbidden, _ := serve(t, http.StatusForbidden, `{"msg":"api key is missing a required scope","msgCode":"forbidden"}`)
+	wrongRole, _ := serve(t, http.StatusForbidden, `{"msg":"insufficient project role","msgCode":"forbidden"}`)
 	unauthorized, _ := serve(t, http.StatusUnauthorized, `{"msg":"Unauthorized","msgCode":"unauthorized"}`)
 	notFound, _ := serve(t, http.StatusNotFound, `{"msg":"Not found","msgCode":"not_found"}`)
 
@@ -150,6 +155,8 @@ func TestExitCodes(t *testing.T) {
 		{"no key", forbidden.URL, []string{projects, "list"}, apicmd.ExitNotAuthenticated, "not logged in"},
 		{"401", unauthorized.URL, []string{projects, "list", apiKey, "k"}, apicmd.ExitNotAuthenticated, "HTTP 401"},
 		{"403 names the scope", forbidden.URL, []string{projects, "create", "--name", "x", apiKey, "k"}, apicmd.ExitMissingScope, "project:write"},
+		// A 403 for a role is not a scope problem: no exit 4, no scope hint.
+		{"403 for a role", wrongRole.URL, []string{projects, "create", "--name", "x", apiKey, "k"}, 0, "insufficient project role"},
 		{"404", notFound.URL, []string{projects, "get", "p1", apiKey, "k"}, 0, "not_found: Not found"},
 	}
 
@@ -175,6 +182,10 @@ func TestExitCodes(t *testing.T) {
 
 			if err == nil || !strings.Contains(err.Error(), tc.contains) {
 				t.Errorf("error %v does not mention %q", err, tc.contains)
+			}
+
+			if tc.code != apicmd.ExitMissingScope && err != nil && strings.Contains(err.Error(), "requires scope") {
+				t.Errorf("error %v names a scope", err)
 			}
 		})
 	}
@@ -215,6 +226,10 @@ func TestDataRejectsBadInput(t *testing.T) {
 		"skipped index": "scopes[1][value]=x",
 		"not key=value": "name",
 		"malformed key": "scopes[0[value]=x",
+		"huge index":    "scopes[300000000][value]=x",
+		"index alias":   "scopes[00][value]=x",
+		"bad enum":      "kind=BOGUS",
+		"dotted key":    "exchange.audience=x",
 	}
 
 	for name, d := range cases {
@@ -224,8 +239,14 @@ func TestDataRejectsBadInput(t *testing.T) {
 		}
 	}
 
+	// A flag with a value outside its enum.
+	_, err := runAigw(t, srv.URL, "resources", "create", "--project-id", "p", "--kind", "BAD", apiKey, "k")
+	if err == nil || !strings.Contains(err.Error(), "not one of") {
+		t.Errorf("--kind BAD: %v", err)
+	}
+
 	if got.method != "" {
-		t.Error("a request was sent for invalid -d input")
+		t.Error("a request was sent for invalid input")
 	}
 }
 
@@ -280,5 +301,136 @@ func TestErrorBodyShapes(t *testing.T) {
 		if err == nil || !strings.HasSuffix(err.Error(), tc.want) {
 			t.Errorf("%s: error = %v, want suffix %q", name, err, tc.want)
 		}
+	}
+}
+
+// Every -d example printed in help must work when copied as written.
+func TestEveryDataExampleWorks(t *testing.T) {
+	t.Parallel()
+
+	exampleRe := regexp.MustCompile(`e\.g\. -d "([^"]+)"`)
+
+	for _, op := range apicmd.Operations {
+		if !op.HasBody {
+			continue
+		}
+
+		srv, got := serve(t, http.StatusOK, `{}`)
+
+		args := slices.Clone(op.Command)
+		for range op.Args {
+			args = append(args, "id-1")
+		}
+
+		help, err := runAigw(t, srv.URL, append(slices.Clone(args), "--help")...)
+		if err != nil {
+			t.Fatalf("%s --help: %v", op.ID, err)
+		}
+
+		m := exampleRe.FindStringSubmatch(help)
+		if m == nil {
+			t.Errorf("%s: no -d example in help", op.ID)
+
+			continue
+		}
+
+		for _, p := range op.Params {
+			if p.In == apicmd.InPath {
+				args = append(args, "--"+p.Flag, "id-2")
+			}
+		}
+
+		_, err = runAigw(t, srv.URL, append(args, "-d", m[1], apiKey, "k")...)
+		if err != nil {
+			t.Errorf("%s: -d %q from help fails: %v", op.ID, m[1], err)
+		}
+
+		if got.method == "" {
+			t.Errorf("%s: -d %q from help sent no request", op.ID, m[1])
+		}
+	}
+}
+
+func TestDeleteRefusesDevNull(t *testing.T) {
+	t.Parallel()
+
+	srv, got := serve(t, http.StatusNoContent, "")
+
+	devNull, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer devNull.Close()
+
+	var out bytes.Buffer
+
+	root := &cobra.Command{Use: "aigw", SilenceUsage: true, SilenceErrors: true}
+	apicmd.AddAllWithBase(root, srv.URL)
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetIn(devNull)
+	root.SetArgs([]string{projects, "delete", "p1", apiKey, "k"})
+
+	// /dev/null is a character device, but not a terminal: refuse, don't prompt.
+	err = root.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--confirm") || strings.Contains(out.String(), "Continue?") {
+		t.Errorf("err %v, output %q", err, out.String())
+	}
+
+	if got.method != "" {
+		t.Error("a request was sent")
+	}
+}
+
+// A typo in a subcommand fails, instead of printing help and exiting 0.
+func TestUnknownSubcommandFails(t *testing.T) {
+	t.Parallel()
+
+	_, err := runAigw(t, "http://unused.invalid", projects, "lsit")
+	if err == nil || !strings.Contains(err.Error(), `unknown command "lsit"`) || !strings.Contains(err.Error(), "did you mean list") {
+		t.Errorf("projects lsit: %v", err)
+	}
+
+	_, err = runAigw(t, "http://unused.invalid", projects)
+	if err != nil {
+		t.Errorf("a bare noun should show its help: %v", err)
+	}
+}
+
+// A success reply that is not JSON did not come from the API: most often a
+// wrong base URL that reached a web app serving its page for every path.
+// Found against eval, where aigw.eval.loginid.ai/v1/projects returned the
+// console's HTML and the CLI printed it and exited 0.
+func TestNonJSONSuccessIsAnError(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = io.WriteString(w, "<!doctype html><title>Console</title>\x1b[31m")
+	}))
+	t.Cleanup(srv.Close)
+
+	out, err := runAigw(t, srv.URL, projects, "list", apiKey, "k")
+	if err == nil || !strings.Contains(err.Error(), "check the base URL") || !strings.Contains(err.Error(), "a web page (text/html)") {
+		t.Fatalf("want a not-the-API error, got %v", err)
+	}
+
+	if strings.Contains(out, "<!doctype") || strings.ContainsRune(err.Error(), '\x1b') {
+		t.Errorf("the page leaked into the output: %q / %q", out, err)
+	}
+}
+
+func TestJSONOutputEndsWithOneNewline(t *testing.T) {
+	t.Parallel()
+
+	srv, _ := serve(t, http.StatusOK, "{\"id\":\"p1\"}\n") // Goa ends bodies with a newline
+
+	out, err := runAigw(t, srv.URL, projects, "get", "p1", apiKey, "k")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if out != "{\n  \"id\": \"p1\"\n}\n" {
+		t.Errorf("output %q", out)
 	}
 }
