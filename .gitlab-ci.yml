@@ -13,6 +13,7 @@ variables:
 stages:
   - build
   - test
+  - release
 
 .build_common_rules:
   rules:
@@ -36,6 +37,13 @@ build:
   extends:
     - .build_common
   stage: build
+  # Not on tags: the release job builds and names the tagged binaries, so a
+  # tag pipeline would otherwise build them twice, under two naming styles.
+  # lint and unit-test keep the shared rules, since the release job needs them.
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: never
+    - !reference [.build_common_rules, rules]
   parallel:
     matrix:
       - GOOS: linux
@@ -87,3 +95,49 @@ generate-check:
   script:
     - make generate_check
   allow_failure: true
+
+.goreleaser:
+  image:
+    name: goreleaser/goreleaser:v2.18.2
+    entrypoint: [""]
+  # GoReleaser reads tags and the changelog from git history.
+  variables:
+    GIT_DEPTH: 0
+
+# Builds the release artifacts on every MR without uploading anything, so a
+# broken .goreleaser.yaml shows up before a tag does.
+goreleaser-snapshot:
+  extends:
+    - .goreleaser
+  stage: build
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - goreleaser check
+    - goreleaser release --snapshot --clean
+  artifacts:
+    paths:
+      # The zips, plus each bare binary once. dist/aigw_* would also take the
+      # build folders whole. A snapshot keeps each bare binary in its build
+      # folder; it gets its versioned name only when a release uploads it, so
+      # a dist/aigw_*_linux_amd64 pattern would match nothing.
+      - dist/aigw_*.zip
+      - dist/aigw_linux_*/aigw
+      - dist/checksums.txt
+    expire_in: 1 day
+
+# On a v* tag, after lint and tests pass: builds the per-OS binaries and zips
+# and attaches them, with checksums.txt, to a GitLab release for devops.
+# Uploads use CI_JOB_TOKEN (see gitlab_urls in .goreleaser.yaml).
+release:
+  extends:
+    - .goreleaser
+  stage: release
+  rules:
+    # Anchored: v1.2.3 and v1.2.3-alpha.1 release; v1.2.3junk does not.
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/
+  needs:
+    - lint
+    - unit-test
+  script:
+    - goreleaser release --clean
