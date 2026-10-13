@@ -90,15 +90,17 @@ generate-check:
     - make generate_check
   allow_failure: true
 
-# Pushes main to the read-only mirror at github.com/loginid1/loginid-aigw-cli.
+# Pushes main, and every tag in main's history, to the read-only mirror at
+# github.com/loginid1/loginid-aigw-cli. The single-branch clone brings exactly
+# those tags; tags on other branches stay off the mirror, along with their commits.
 # Runs only in pipelines that set MIRROR_SYNC=true: the daily schedule, or a
 # manual run. That schedule also sets SAST_DISABLED, SECRET_DETECTION_DISABLED
 # and DEPENDENCY_SCANNING_DISABLED so the included security jobs stay out of it.
 #
 # GITHUB_MIRROR_SSH_KEY_B64 is a base64 write deploy key on the GitHub repo,
 # stored as a protected variable, so only protected refs can push.
-# The push is not forced: if GitHub ever has commits GitLab lacks, the job fails
-# instead of overwriting them.
+# The push is not forced: if GitHub ever has commits GitLab lacks, or a tag was
+# moved on GitLab after it was mirrored, the job fails instead of overwriting.
 mirror-sync:
   stage: build
   image: alpine:3.22
@@ -120,4 +122,4 @@ mirror-sync:
   script:
     - git clone --bare --single-branch --branch main "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" src.git
     - echo "pushing main at $(git -C src.git rev-parse main)"
-    - git -C src.git push "$MIRROR_URL" main:main
+    - git -C src.git push "$MIRROR_URL" main:main "refs/tags/*:refs/tags/*"
