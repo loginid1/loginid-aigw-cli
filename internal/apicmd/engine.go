@@ -57,7 +57,7 @@ type Target struct {
 	Temporary bool
 }
 
-// ResolveTarget returns DefaultAPIBase, the spec's server. It is not a flag:
+// ResolveTarget returns APIBase, the spec's server. It is not a flag:
 // a key sent to a URL the user typed would leak.
 //
 // TEMP: envTempAPIBase overrides it, for testing against local and staging
@@ -68,7 +68,7 @@ type Target struct {
 func ResolveTarget() (Target, error) {
 	override := os.Getenv(envTempAPIBase)
 	if override == "" {
-		return Target{BaseURL: DefaultAPIBase}, nil
+		return Target{BaseURL: APIBase}, nil
 	}
 
 	u, err := url.Parse(override)
@@ -259,14 +259,12 @@ func run(cmd *cobra.Command, op *Operation, resolveTarget func() (Target, error)
 	flagKey, _ := cmd.Flags().GetString(flagAPIKey)
 
 	apiKey, err := client.ResolveAPIKey(flagKey, target.Temporary)
-	if errors.Is(err, client.ErrNotLoggedIn) && target.Temporary {
-		return &ExitError{Code: ExitNotAuthenticated, Err: fmt.Errorf(
-			"%s is set: pass --%s or set %s (%s and the saved login are not used)",
-			envTempAPIBase, flagAPIKey, client.EnvTempAPIKey, client.EnvAPIKey)}
+	if errors.Is(err, client.ErrNotLoggedIn) {
+		return NotLoggedIn(target)
 	}
 
 	if err != nil {
-		mapped := exitError(err)
+		mapped := ExitErrorFor(err)
 
 		var exitErr *ExitError
 		if errors.As(mapped, &exitErr) {
@@ -317,9 +315,9 @@ func run(cmd *cobra.Command, op *Operation, resolveTarget func() (Target, error)
 		}
 	}
 
-	body, err := client.New(target.BaseURL, apiKey).Do(cmd.Context(), req)
+	body, err := client.New(target.BaseURL, apiKey.Value).Do(cmd.Context(), req)
 	if err != nil {
-		return exitError(err)
+		return ExitErrorFor(err)
 	}
 
 	return printJSON(cmd.OutOrStdout(), body)

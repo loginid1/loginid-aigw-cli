@@ -44,7 +44,7 @@ func TestResolveTarget(t *testing.T) {
 			t.Errorf("%q: target %+v, err %v", tc.value, got, err)
 		}
 
-		if tc.value == "" && got.BaseURL != apicmd.DefaultAPIBase {
+		if tc.value == "" && got.BaseURL != apicmd.APIBase {
 			t.Errorf("unset: base %q", got.BaseURL)
 		}
 	}

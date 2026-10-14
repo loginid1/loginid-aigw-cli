@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/apicmd"
 	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/config"
 	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/credentials"
 	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/prompt"
@@ -24,14 +25,15 @@ func newLoginCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "login",
-		Short: "Save an API key for aigw to use",
+		Short: "Check an API key and save it for aigw to use",
 		Long: "login saves a devcon API key in the OS credential store: the macOS Keychain,\n" +
 			"Windows Credential Manager, or the Secret Service keyring on Linux.\n\n" +
 			"It asks for the key without echoing it. In scripts, pipe the key in with\n" +
 			"--with-key-stdin rather than putting it on the command line.\n\n" +
 			"If a key is already saved, login asks before replacing it. --confirm skips\n" +
 			"the question; without a terminal, --confirm is required.\n\n" +
-			"The key is not checked against the API yet.",
+			"Before saving, login lists projects with the key. A key the API rejects is\n" +
+			"not saved. If the API cannot be reached, the key is saved with a warning.",
 		Example: "  aigw login\n" +
 			"  aigw login --with-key-stdin --confirm < key.txt",
 		Args: cobra.NoArgs,
@@ -65,6 +67,14 @@ func newLoginCommand() *cobra.Command {
 				fmt.Fprintln(cmd.ErrOrStderr(), "warning: this does not look like a devcon API key (they start with aigw_sk_); saving it anyway")
 			}
 
+			// Check before saving, so a mistyped key is never stored. The
+			// key goes only to the real API, never to AIGW_TEMP_API_BASE,
+			// which a cloned repo's env could set to collect it.
+			err = checkNewKey(cmd, key)
+			if err != nil {
+				return err
+			}
+
 			where, err := credentials.Save(dir, config.DefaultProfile, key, insecure)
 			if err != nil {
 				return err
@@ -89,6 +99,27 @@ func newLoginCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&confirm, "confirm", false, "Replace a saved key without asking")
 
 	return cmd
+}
+
+// checkNewKey lists projects with key. A key the API rejects fails login with
+// exit 3. Any other failure, such as no network or a key without project:read,
+// only warns: the key may still be right.
+func checkNewKey(cmd *cobra.Command, key string) error {
+	err := apicmd.ProbeKey(cmd.Context(), apicmd.APIBase, key)
+
+	var exitErr *apicmd.ExitError
+
+	switch {
+	case err == nil:
+		fmt.Fprintf(cmd.ErrOrStderr(), "The key works on %s.\n", apicmd.APIBase)
+	case errors.As(err, &exitErr) && exitErr.Code == apicmd.ExitNotAuthenticated:
+		return &apicmd.ExitError{Code: apicmd.ExitNotAuthenticated, Err: fmt.Errorf(
+			"%s rejected the key, so it was not saved: %w", apicmd.APIBase, err)}
+	default:
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not check the key on %s: %v; saving it anyway\n", apicmd.APIBase, err)
+	}
+
+	return nil
 }
 
 // confirmReplace asks whether to replace the saved key. It needs a terminal on

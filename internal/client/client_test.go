@@ -264,8 +264,8 @@ func TestKeysFromEnvAndFlagsAreCleaned(t *testing.T) {
 	t.Setenv("AIGW_API_KEY", "aigw_sk_abc\r\n") // read from a Windows file
 
 	got, err := client.ResolveAPIKey("", false)
-	if err != nil || got != "aigw_sk_abc" {
-		t.Errorf("trailing CRLF: %q, %v", got, err)
+	if err != nil || got.Value != "aigw_sk_abc" || got.Source != "AIGW_API_KEY" {
+		t.Errorf("trailing CRLF: %+v, %v", got, err)
 	}
 
 	t.Setenv("AIGW_API_KEY", "aigw_sk_a b")

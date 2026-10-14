@@ -24,9 +24,22 @@ func (e *ExitError) Error() string { return e.Err.Error() }
 
 func (e *ExitError) Unwrap() error { return e.Err }
 
-// exitError gives err the exit code the CLI's conventions assign it: 3 when
+// NotLoggedIn is the exit-3 error for a run with no key, naming the fix that
+// fits the target.
+func NotLoggedIn(t Target) error {
+	if t.Temporary {
+		return &ExitError{Code: ExitNotAuthenticated, Err: fmt.Errorf(
+			"%s is set: pass --%s or set %s (%s and the saved login are not used)",
+			envTempAPIBase, flagAPIKey, client.EnvTempAPIKey, client.EnvAPIKey)}
+	}
+
+	return ExitErrorFor(client.ErrNotLoggedIn)
+}
+
+// ExitErrorFor gives err the exit code the CLI's conventions assign it: 3 when
 // there is no usable key or the API rejects it, 4 when the key lacks a scope.
-func exitError(err error) error {
+// A nil err stays nil.
+func ExitErrorFor(err error) error {
 	if errors.Is(err, client.ErrNotLoggedIn) {
 		return &ExitError{Code: ExitNotAuthenticated, Err: fmt.Errorf(
 			"not logged in: run `aigw login`, pass --%s, or set %s", flagAPIKey, client.EnvAPIKey)}
