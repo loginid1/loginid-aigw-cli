@@ -3,6 +3,7 @@ package apicmd
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -308,19 +310,46 @@ func run(cmd *cobra.Command, op *Operation, resolveTarget func() (Target, error)
 		}
 	}
 
+	c := client.New(target.BaseURL, apiKey.Value)
+
 	if op.Method == http.MethodDelete {
-		err = confirmDelete(cmd, op, args)
+		err = confirmDelete(cmd, op, args, c, req)
 		if err != nil {
 			return err
 		}
 	}
 
-	body, err := client.New(target.BaseURL, apiKey.Value).Do(cmd.Context(), req)
+	body, err := c.Do(cmd.Context(), req)
 	if err != nil {
 		return ExitErrorFor(err)
 	}
 
+	// A delete answers 204 with no body. Say what went, so a script or an
+	// agent has something to read and a person sees it worked.
+	if op.Method == http.MethodDelete && len(bytes.TrimSpace(body)) == 0 {
+		body, err = deletedBody(req.PathParams)
+		if err != nil {
+			return err
+		}
+	}
+
 	return printJSON(cmd.OutOrStdout(), body)
+}
+
+// deletedBody is {"deleted": true} plus the path parameters that named what
+// was deleted, e.g. "projectId".
+func deletedBody(pathParams map[string]string) ([]byte, error) {
+	out := map[string]any{"deleted": true}
+	for k, v := range pathParams {
+		out[k] = v
+	}
+
+	body, err := json.Marshal(out)
+	if err != nil {
+		return nil, fmt.Errorf("format result: %w", err)
+	}
+
+	return body, nil
 }
 
 // requiredExample shows the command with every unconditionally required
@@ -433,10 +462,16 @@ func buildBody(cmd *cobra.Command, op *Operation) (map[string]any, error) {
 
 	var err error
 
+	// The body fields set by flags, by API name, so -d cannot quietly
+	// overwrite one.
+	byFlag := map[string]string{}
+
 	for _, p := range op.Params {
 		if p.In != InBody || !cmd.Flags().Changed(p.Flag) {
 			continue
 		}
+
+		byFlag[p.Name] = p.Flag
 
 		var v any
 
@@ -482,6 +517,10 @@ func buildBody(cmd *cobra.Command, op *Operation) (map[string]any, error) {
 
 	data, _ := cmd.Flags().GetStringArray(flagData)
 	for _, d := range data {
+		if flag := overlappingFlag(d, byFlag); flag != "" {
+			return nil, fmt.Errorf("-d %q and --%s set the same field: use one of them", d, flag)
+		}
+
 		root, err = applyData(root, op, d)
 		if err != nil {
 			return nil, fmt.Errorf("-d %q: %w", d, err)
@@ -491,7 +530,7 @@ func buildBody(cmd *cobra.Command, op *Operation) (map[string]any, error) {
 	return root.(map[string]any), nil
 }
 
-func confirmDelete(cmd *cobra.Command, op *Operation, args []string) error {
+func confirmDelete(cmd *cobra.Command, op *Operation, args []string, c *client.Client, req *client.Request) error {
 	if ok, _ := cmd.Flags().GetBool(flagConfirm); ok {
 		return nil
 	}
@@ -506,7 +545,7 @@ func confirmDelete(cmd *cobra.Command, op *Operation, args []string) error {
 		return fmt.Errorf("refusing to run %q without --%s when input is not a terminal%s", target, flagConfirm, prompt.NotTerminalHint())
 	}
 
-	fmt.Fprintf(cmd.ErrOrStderr(), "This runs %q and cannot be undone. Continue? [y/N] ", target)
+	fmt.Fprint(cmd.ErrOrStderr(), DeletePrompt(cmd.Context(), op, target, c, req))
 
 	line, _ := bufio.NewReader(in).ReadString('\n')
 	if answer := strings.ToLower(strings.TrimSpace(line)); answer != "y" && answer != "yes" {
@@ -514,6 +553,61 @@ func confirmDelete(cmd *cobra.Command, op *Operation, args []string) error {
 	}
 
 	return nil
+}
+
+// DeletePrompt is the question confirmDelete asks: what the command deletes,
+// by name when the API can say, and what goes with it, in the spec's words.
+func DeletePrompt(ctx context.Context, op *Operation, target string, c *client.Client, req *client.Request) string {
+	var b strings.Builder
+
+	b.WriteString("This runs " + strconv.Quote(target))
+
+	if name := lookupName(ctx, op, c, req); name != "" {
+		noun := strings.TrimSuffix(op.Command[len(op.Command)-2], "s")
+		fmt.Fprintf(&b, ", deleting %s %q", noun, name)
+	}
+
+	b.WriteString(".\n")
+
+	if op.Long != "" {
+		b.WriteString(op.Long + "\n")
+	}
+
+	b.WriteString("This cannot be undone. Continue? [y/N] ")
+
+	return b.String()
+}
+
+// lookupName fetches what a delete is about to remove, through the GET on the
+// same path, and returns its name. Any failure returns "": the prompt is still
+// right without a name, and the delete reports its own errors.
+func lookupName(ctx context.Context, del *Operation, c *client.Client, req *client.Request) string {
+	i := slices.IndexFunc(Operations, func(op Operation) bool {
+		return op.Method == http.MethodGet && op.Path == del.Path
+	})
+	if i < 0 {
+		return ""
+	}
+
+	body, err := c.Do(ctx, &client.Request{
+		Method:     http.MethodGet,
+		Path:       Operations[i].Path,
+		PathParams: req.PathParams,
+		Scope:      Operations[i].Scope,
+	})
+	if err != nil {
+		return ""
+	}
+
+	var got struct {
+		Name string `json:"name"`
+	}
+
+	if json.Unmarshal(body, &got) != nil {
+		return ""
+	}
+
+	return got.Name
 }
 
 // printJSON writes an indented copy of body. A body that is empty, as on a 204,

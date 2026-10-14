@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/apicmd"
+	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/client"
 )
 
 const (
@@ -210,8 +211,102 @@ func TestDeleteNeedsConfirmWithoutTerminal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got.method != http.MethodDelete || out != "" {
+	if got.method != http.MethodDelete || out != "{\n  \"deleted\": true,\n  \"projectId\": \"p1\"\n}\n" {
 		t.Errorf("got %s, output %q", got.method, out)
+	}
+}
+
+func TestDeleteResultNamesEveryPathParam(t *testing.T) {
+	t.Parallel()
+
+	srv, _ := serve(t, http.StatusNoContent, "")
+
+	out, err := runAigw(t, srv.URL, "resources", "delete", "r1", "--project-id", "p1", "--confirm", apiKey, "k")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var got map[string]any
+
+	err = json.Unmarshal([]byte(out), &got)
+	if err != nil || !reflect.DeepEqual(got, map[string]any{"deleted": true, "projectId": "p1", "resourceId": "r1"}) {
+		t.Errorf("output %q, %v", out, err)
+	}
+}
+
+// A delete that answers with a body prints that body, not a made-up one.
+func TestDeleteWithABodyPrintsIt(t *testing.T) {
+	t.Parallel()
+
+	srv, _ := serve(t, http.StatusOK, `{"id":"p1","gone":"yes"}`)
+
+	out, err := runAigw(t, srv.URL, projects, "delete", "p1", "--confirm", apiKey, "k")
+	if err != nil || strings.Contains(out, "deleted") || !strings.Contains(out, `"gone": "yes"`) {
+		t.Errorf("output %q, %v", out, err)
+	}
+}
+
+func TestDeletePromptNamesTheTargetAndWhatGoesWithIt(t *testing.T) {
+	t.Parallel()
+
+	srv, got := serve(t, http.StatusOK, `{"id":"p1","name":"checkout"}`)
+
+	op := apicmd.OperationByID("projects#delete")
+	req := &client.Request{Method: op.Method, Path: op.Path, PathParams: map[string]string{"projectId": "p1"}}
+
+	prompt := apicmd.DeletePrompt(t.Context(), op, "projects delete p1", client.New(srv.URL, "k"), req)
+
+	for _, want := range []string{
+		`This runs "projects delete p1", deleting project "checkout".`,
+		"everything the platform holds under it",
+		"cannot be undone. Continue? [y/N] ",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt lacks %q:\n%s", want, prompt)
+		}
+	}
+
+	if got.method != http.MethodGet || got.path != "/v1/projects/p1" {
+		t.Errorf("looked the name up with %s %s", got.method, got.path)
+	}
+
+	// No name when the lookup fails; the prompt still asks.
+	down, _ := serve(t, http.StatusNotFound, `{"msgCode":"not_found","msg":"project not found"}`)
+
+	prompt = apicmd.DeletePrompt(t.Context(), op, "projects delete p1", client.New(down.URL, "k"), req)
+	if strings.Contains(prompt, "deleting") || !strings.Contains(prompt, "Continue?") {
+		t.Errorf("prompt after a failed lookup:\n%s", prompt)
+	}
+}
+
+func TestDataCannotOverwriteAFlag(t *testing.T) {
+	t.Parallel()
+
+	srv, got := serve(t, http.StatusOK, `{}`)
+
+	cases := [][]string{
+		{projects, "create", "--name", "a", "-d", "name=b"},
+		{"resources", "create", "--project-id", "p", "--name", "n", "--exchange.audience", "a", "-d", "exchange[audience]=b"},
+		{"resources", "create", "--project-id", "p", "--name", "n", "--oauth-client.redirect-uris", "https://a", "-d", "oauthClient[redirectUris][0]=https://b"},
+		{projects, "domain-rules", "set", "d.example", "--project-id", "p", "--decision", "APPROVE", "-d", "decision=REJECT"},
+	}
+
+	for _, args := range cases {
+		_, err := runAigw(t, srv.URL, append(args, apiKey, "k")...)
+		if err == nil || !strings.Contains(err.Error(), "set the same field") {
+			t.Errorf("%v: %v", args, err)
+		}
+	}
+
+	if got.method != "" {
+		t.Fatal("a request was sent")
+	}
+
+	// Different fields still mix.
+	_, err := runAigw(t, srv.URL, "resources", "create", "--project-id", "p", "--name", "n",
+		"-d", "exchange[audience]=b", apiKey, "k")
+	if err != nil || got.body["name"] != "n" {
+		t.Errorf("flag and -d on different fields: %v, body %v", err, got.body)
 	}
 }
 

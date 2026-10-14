@@ -42,6 +42,30 @@ func applyData(root any, op *Operation, entry string) (any, error) {
 	return insert(root, segs, v)
 }
 
+// overlappingFlag returns the flag in byFlag (API name to flag) that sets the
+// field the -d entry sets, or a field inside it or around it, else "". A
+// malformed entry returns "", for applyData to report.
+func overlappingFlag(entry string, byFlag map[string]string) string {
+	key, _, _ := strings.Cut(entry, "=")
+
+	segs, err := splitKey(key)
+	if err != nil {
+		return ""
+	}
+
+	path := normalize(segs)
+
+	for name, flag := range byFlag {
+		if path == name ||
+			strings.HasPrefix(path, name+".") || strings.HasPrefix(path, name+"[") ||
+			strings.HasPrefix(name, path+".") {
+			return flag
+		}
+	}
+
+	return ""
+}
+
 // splitKey turns "a[b][0]" into ["a", "b", "0"].
 func splitKey(key string) ([]string, error) {
 	head, rest, _ := strings.Cut(key, "[")
