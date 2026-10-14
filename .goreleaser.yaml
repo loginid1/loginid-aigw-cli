@@ -57,6 +57,10 @@ changelog:
     exclude:
       - "^Merge branch"
 
+# Release to GitLab even when the runner also has a GITHUB_TOKEN, which would
+# otherwise make GoReleaser release to GitHub, at a repo path that is not there.
+force_token: gitlab
+
 release:
   gitlab:
     owner: loginid/software
@@ -67,7 +71,8 @@ release:
     - glob: THIRD_PARTY_NOTICES.txt
 
 # Upload through the generic package registry with CI_JOB_TOKEN, so the
-# release job needs no personal or project access token.
+# release job needs no personal or project access token. The job passes it in
+# as GITLAB_TOKEN; GoReleaser uses job-token auth when that equals CI_JOB_TOKEN.
 gitlab_urls:
   use_package_registry: true
   use_job_token: true

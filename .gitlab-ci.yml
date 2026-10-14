@@ -141,6 +141,8 @@ release:
   needs:
     - lint
     - unit-test
+  variables:
+    GITLAB_TOKEN: $CI_JOB_TOKEN
   script:
     - goreleaser release --clean
 
