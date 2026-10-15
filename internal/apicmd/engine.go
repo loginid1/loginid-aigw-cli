@@ -324,6 +324,8 @@ func run(cmd *cobra.Command, op *Operation, resolveTarget func() (Target, error)
 		return ExitErrorFor(err)
 	}
 
+	warnOneTimeSecrets(cmd.ErrOrStderr(), body)
+
 	// A delete answers 204 with no body. Say what went, so a script or an
 	// agent has something to read and a person sees it worked.
 	if op.Method == http.MethodDelete && len(bytes.TrimSpace(body)) == 0 {
@@ -334,6 +336,26 @@ func run(cmd *cobra.Command, op *Operation, resolveTarget func() (Target, error)
 	}
 
 	return printJSON(cmd.OutOrStdout(), body)
+}
+
+// oneTimeSecrets are the response fields the API returns once and never
+// again: the spec marks clientSecret "Shown once" on ProjectProxyClientSecret
+// and "Returned once" on ResourceCreateResult.
+var oneTimeSecrets = []string{"clientSecret"}
+
+// warnOneTimeSecrets tells the user, on stderr, to store any one-time secret
+// in body. stdout stays pure JSON for whoever reads it.
+func warnOneTimeSecrets(w io.Writer, body []byte) {
+	var top map[string]any
+	if json.Unmarshal(body, &top) != nil {
+		return
+	}
+
+	for _, field := range oneTimeSecrets {
+		if v, _ := top[field].(string); v != "" {
+			fmt.Fprintf(w, "warning: %s is shown only this once and cannot be read back; store it now\n", field)
+		}
+	}
 }
 
 // deletedBody is {"deleted": true} plus the path parameters that named what

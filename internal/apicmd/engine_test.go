@@ -529,3 +529,42 @@ func TestJSONOutputEndsWithOneNewline(t *testing.T) {
 		t.Errorf("output %q", out)
 	}
 }
+
+func TestOneTimeSecretGetsAWarning(t *testing.T) {
+	t.Parallel()
+
+	srv, _ := serve(t, http.StatusCreated, `{"id":"pxc-1","clientId":"c","clientSecret":"s3cr3t"}`)
+
+	var stdout, stderr bytes.Buffer
+
+	root := &cobra.Command{Use: "aigw", SilenceUsage: true, SilenceErrors: true}
+	apicmd.AddAllWithBase(root, srv.URL)
+	root.SetOut(&stdout)
+	root.SetErr(&stderr)
+	root.SetArgs([]string{projects, "proxy-clients", "create", "--project-id", "p1", apiKey, "k"})
+
+	err := root.Execute()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(stderr.String(), "clientSecret is shown only this once") {
+		t.Errorf("stderr = %q", stderr.String())
+	}
+
+	// stdout stays one JSON document.
+	var got map[string]any
+	if json.Unmarshal(stdout.Bytes(), &got) != nil || got["clientSecret"] != "s3cr3t" {
+		t.Errorf("stdout = %q", stdout.String())
+	}
+
+	// No secret, or an empty one: no warning.
+	for _, reply := range []string{`{"id":"pxc-1"}`, `{"clientSecret":""}`, `[]`} {
+		quiet, _ := serve(t, http.StatusCreated, reply)
+
+		out, err := runAigw(t, quiet.URL, projects, "proxy-clients", "create", "--project-id", "p1", apiKey, "k")
+		if err != nil || strings.Contains(out, "warning") {
+			t.Errorf("%s: %v, output %q", reply, err, out)
+		}
+	}
+}
