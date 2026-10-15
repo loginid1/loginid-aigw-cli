@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/config"
@@ -12,6 +13,7 @@ import (
 func TestDirIgnoresRelativeXDG(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir on Windows
 
 	t.Setenv("XDG_CONFIG_HOME", "rel")
 
@@ -56,7 +58,8 @@ func TestSaveRestrictsTheDirectory(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if perm := info.Mode().Perm(); perm != 0o700 {
+		// Windows has no mode bits to check.
+		if perm := info.Mode().Perm(); runtime.GOOS != "windows" && perm != 0o700 {
 			t.Errorf("%s: directory mode %o, want 700", name, perm)
 		}
 

@@ -29,10 +29,12 @@ builds:
       - -s -w
       - -X gitlab.com/loginid/software/loginid-aigw-cli.git/internal/version.Version={{ .Version }}
       - -X gitlab.com/loginid/software/loginid-aigw-cli.git/internal/version.GitCommit={{ .ShortCommit }}
-    # Windows already builds in CI; add it here when devops wants its artifacts.
+    # The zip archive names the Windows binary aigw.exe. The Homebrew cask
+    # takes only the darwin and linux zips.
     goos:
       - linux
       - darwin
+      - windows
     goarch:
       - amd64
       - arm64

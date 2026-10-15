@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -136,13 +137,14 @@ func CreateTemp(dir string) (*os.File, error) {
 
 	// MkdirAll leaves an existing directory as it is. If others can write to
 	// it, they can rename their own config and key files over these, so
-	// tighten it before writing anything into it.
+	// tighten it before writing anything into it. Windows has no mode bits:
+	// there, the user folder's ACLs keep others out.
 	info, err := os.Stat(dir)
 	if err != nil {
 		return nil, fmt.Errorf("check %s: %w", dir, err)
 	}
 
-	if info.Mode().Perm()&0o077 != 0 {
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
 		err = os.Chmod(dir, 0o700)
 		if err != nil {
 			return nil, fmt.Errorf("%s is accessible to other users and could not be restricted: %w", dir, err)

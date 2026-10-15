@@ -86,6 +86,27 @@ unit-test:
     - make test_coverage
   coverage: '/^total:\s+\(statements\)\s+(\d+\.\d+%)/'
 
+# Runs the unit tests on Windows, where the Linux jobs cannot reach: paths,
+# USERPROFILE, file modes, the console. It uses GitLab's hosted Windows runner,
+# which has no Go, so it fetches the pinned release from go.dev and checks it
+# against the SHA-256 go.dev publishes. Not in the release job's needs yet:
+# promote it once it has been green for a while.
+unit-test-windows:
+  extends:
+    - .build_common_rules
+  stage: test
+  tags:
+    - saas-windows-medium-amd64
+  script:
+    - $zip = "go$env:GOLANG_VERSION.windows-amd64.zip"
+    - Invoke-WebRequest -Uri "https://go.dev/dl/$zip" -OutFile $zip
+    - $want = (Invoke-RestMethod "https://go.dev/dl/?mode=json&include=all").files | Where-Object { $_.filename -eq $zip } | Select-Object -ExpandProperty sha256
+    - if (-not $want -or (Get-FileHash $zip -Algorithm SHA256).Hash -ne $want.ToUpper()) { throw "checksum mismatch for $zip" }
+    - Expand-Archive $zip -DestinationPath "$env:TEMP\go-sdk"
+    - $env:Path = "$env:TEMP\go-sdk\go\bin;$env:Path"
+    - go version
+    - go test ./...
+
 # Regenerates the API commands from the pinned spec and fails if the result
 # differs from the checked-in operations_gen.go. It reads loginid-aigw with the
 # job token, so it stays allowed to fail until loginid-aigw lists this project
@@ -126,6 +147,8 @@ goreleaser-snapshot:
       - dist/aigw_*.zip
       - dist/aigw_linux_*/aigw
       - dist/checksums.txt
+      # The rendered cask, to review what a release would push to the tap.
+      - dist/homebrew/Casks/*.rb
     expire_in: 1 day
 
 # On a v* tag, after lint and tests pass: builds the per-OS binaries and zips
