@@ -88,6 +88,22 @@ homebrew_casks:
     binaries: [aigw]
     homepage: https://github.com/loginid1/loginid-aigw-cli
     description: Command-line client for the LoginID AI Gateway
+    # Ruby interpolation uses the installed cask version and keeps the box aligned.
+    caveats: |
+      ╭────────────────────────────────────────────────────────╮
+      │                                                        │
+      │     █████╗ ██╗ ██████╗ ██╗    ██╗                      │
+      │    ██╔══██╗██║██╔════╝ ██║    ██║                      │
+      │    ███████║██║██║  ███╗██║ █╗ ██║                      │
+      │    ██╔══██║██║██║   ██║██║███╗██║                      │
+      │    ██║  ██║██║╚██████╔╝╚███╔███╔╝                      │
+      │    ╚═╝  ╚═╝╚═╝ ╚═════╝  ╚══╝╚══╝                       │
+      │                                                        │
+      │    LoginID  ▸  AI Gateway#{"v#{version}".rjust(26)}    │
+      │    ────────────────────────────────────────────────    │
+      │    verified identity for every agent, every call       │
+      │                                                        │
+      ╰────────────────────────────────────────────────────────╯
     # Prereleases (v1.2.3-rc.1) get a GitHub release but leave the cask alone.
     skip_upload: auto
     repository:
