@@ -114,11 +114,13 @@ homebrew_casks:
         url: git@github.com:loginid1/homebrew-tap.git
         # envOrDefault: MR snapshot jobs render the cask without the key.
         private_key: '{{ envOrDefault "HOMEBREW_TAP_SSH_KEY" "" }}'
-    hooks:
-      post:
-        # The binary is not signed or notarized, so macOS would quarantine it
-        # and refuse to run it ("aigw is damaged").
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/aigw"]
-          end
+    # GoReleaser 2.18 has no hooks.post.install_steps; custom_block emits the
+    # supported Homebrew DSL without the deprecated postflight Ruby hook.
+    # Escape Homebrew's install-time token through GoReleaser's template.
+    # Preserve quarantine removal for the unsigned macOS binary.
+    custom_block: |
+      on_macos do
+        postflight_steps do
+          run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ "{{staged_path}}" }}/aigw"]
+        end
+      end
