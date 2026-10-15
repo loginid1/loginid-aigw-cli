@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/apicmd"
+	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/version"
 )
 
 // NewRootCommand builds the command tree. It is exported so tests can drive a
@@ -25,7 +26,12 @@ func NewRootCommand() *cobra.Command {
 		// buries the one line that matters.
 		SilenceUsage:  true,
 		SilenceErrors: true,
+
+		// Setting Version gives the root --version and -v.
+		Version: version.Version,
 	}
+
+	root.SetVersionTemplate(versionLine())
 
 	root.AddCommand(newVersionCommand(), newLoginCommand(), newLogoutCommand(), newStatusCommand())
 	apicmd.AddAll(root)

@@ -47,7 +47,7 @@ func newStatusCommand() *cobra.Command {
 			"  aigw status -o json",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if output != "text" && output != "json" {
+			if output != outputText && output != outputJSON {
 				return fmt.Errorf("unsupported output format %q: use text or json", output)
 			}
 
@@ -69,7 +69,7 @@ func newStatusCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&output, "output", "o", "text", "Output format (text, json)")
+	cmd.Flags().StringVarP(&output, "output", "o", outputText, "Output format (text, json)")
 	cmd.Flags().StringVar(&apiKey, "api-key", "", "API key to check instead of the profile's (env "+client.EnvAPIKey+")")
 
 	return cmd
@@ -121,7 +121,7 @@ func checkStatus(cmd *cobra.Command, target apicmd.Target, flagKey string) (stat
 }
 
 func printStatus(w io.Writer, output string, r *statusReport) error {
-	if output == "json" {
+	if output == outputJSON {
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
 
