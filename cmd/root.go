@@ -33,7 +33,7 @@ func NewRootCommand() *cobra.Command {
 
 	root.SetVersionTemplate(versionLine())
 
-	root.AddCommand(newVersionCommand(), newLoginCommand(), newLogoutCommand(), newStatusCommand())
+	root.AddCommand(newVersionCommand(), newLoginCommand(), newLogoutCommand(), newStatusCommand(), newSkillCommand())
 	apicmd.AddAll(root)
 
 	return root

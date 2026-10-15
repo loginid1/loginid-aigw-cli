@@ -176,6 +176,26 @@ required: a delete never runs because nobody was there to answer.
 
 Each command's `--help` names the scope it needs.
 
+## Use with Claude Code
+
+`aigw` carries a [Claude Code skill](https://code.claude.com/docs/en/skills)
+that teaches Claude how to use it: check the login first, find commands with `--help`,
+ask you before every delete, and keep secrets out of the chat.
+
+```sh
+aigw skill install
+```
+
+This writes `~/.claude/skills/aigw/SKILL.md` (or `$CLAUDE_CONFIG_DIR/skills/aigw/` when
+that is set). Start a new Claude Code session to use it. The skill ships inside `aigw`,
+so it always matches your version: run `aigw skill install` again after you upgrade.
+
+`aigw skill uninstall` removes it. `aigw skill show` prints it, for example to add it to
+another AI tool's instructions file.
+
+The skill does not pre-approve any command. Claude Code still asks you before it runs
+`aigw`, as it does for any shell command.
+
 ## Configuration
 
 `aigw` keeps its settings in `~/.config/aigw/config.toml`, or in
