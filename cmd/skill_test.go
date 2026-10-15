@@ -114,6 +114,7 @@ func TestSkillLeavesSomeoneElsesFileAlone(t *testing.T) {
 func TestSkillDefaultsToHomeClaudeDir(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir on Windows
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
 
 	_, err := run(t, "", "skill", "install")
