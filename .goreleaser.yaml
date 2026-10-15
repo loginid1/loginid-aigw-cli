@@ -1,8 +1,13 @@
-# Builds the per-OS release artifacts devops distributes: for each target, the
-# bare binary and a zip of it, plus checksums.txt, attached to a GitLab release.
-# Installers, signing and public hosting are devops' side, not this file's.
+# Builds the per-OS release artifacts: for each target, the bare binary and a
+# zip of it, plus checksums.txt. Two pipelines run it on every v* tag:
+#   - GitLab CI (.gitlab-ci.yml) releases to GitLab, for devops, with
+#     --skip=homebrew.
+#   - The GitHub mirror (.github/workflows/release.yml) releases to
+#     github.com/loginid1/loginid-aigw-cli and updates the Homebrew cask.
+# GoReleaser releases to whichever forge its token is for: GITLAB_TOKEN or
+# GITHUB_TOKEN. Each pipeline sets only its own.
 #
-# CI runs this on every v* tag (see .gitlab-ci.yml). Locally:
+# Locally:
 #   goreleaser release --snapshot --clean   # build into dist/, upload nothing
 version: 2
 
@@ -24,10 +29,10 @@ builds:
       - -s -w
       - -X gitlab.com/loginid/software/loginid-aigw-cli.git/internal/version.Version={{ .Version }}
       - -X gitlab.com/loginid/software/loginid-aigw-cli.git/internal/version.GitCommit={{ .ShortCommit }}
-    # Linux first. macOS and Windows already build in CI; add them here when
-    # devops wants their artifacts.
+    # Windows already builds in CI; add it here when devops wants its artifacts.
     goos:
       - linux
+      - darwin
     goarch:
       - amd64
       - arm64
@@ -57,14 +62,10 @@ changelog:
     exclude:
       - "^Merge branch"
 
-# Release to GitLab even when the runner also has a GITHUB_TOKEN, which would
-# otherwise make GoReleaser release to GitHub, at a repo path that is not there.
-force_token: gitlab
-
+# No github or gitlab section: GoReleaser allows only one, and without one it
+# releases to the repo the origin remote points at. That is GitLab in GitLab CI
+# and the mirror in its workflow.
 release:
-  gitlab:
-    owner: loginid/software
-    name: loginid-aigw-cli
   # The bare binaries cannot carry the notices themselves, so they ship as a
   # file of their own next to them.
   extra_files:
@@ -76,3 +77,32 @@ release:
 gitlab_urls:
   use_package_registry: true
   use_job_token: true
+
+# Writes Casks/aigw-cli.rb to github.com/loginid1/homebrew-tap, so that
+#   brew install loginid1/tap/aigw-cli
+# installs the zip from the GitHub release. Only the mirror's workflow runs
+# this; it pushes over SSH with a write deploy key on the tap repo.
+homebrew_casks:
+  - name: aigw-cli
+    ids: [zip]
+    binaries: [aigw]
+    homepage: https://github.com/loginid1/loginid-aigw-cli
+    description: Command-line client for the LoginID AI Gateway
+    # Prereleases (v1.2.3-rc.1) get a GitHub release but leave the cask alone.
+    skip_upload: auto
+    repository:
+      owner: loginid1
+      name: homebrew-tap
+      branch: main
+      git:
+        url: git@github.com:loginid1/homebrew-tap.git
+        # envOrDefault: MR snapshot jobs render the cask without the key.
+        private_key: '{{ envOrDefault "HOMEBREW_TAP_SSH_KEY" "" }}'
+    hooks:
+      post:
+        # The binary is not signed or notarized, so macOS would quarantine it
+        # and refuse to run it ("aigw is damaged").
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/aigw"]
+          end
