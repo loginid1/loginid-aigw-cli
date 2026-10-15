@@ -87,22 +87,45 @@ unit-test:
   coverage: '/^total:\s+\(statements\)\s+(\d+\.\d+%)/'
 
 # Runs the unit tests on Windows, where the Linux jobs cannot reach: paths,
-# USERPROFILE, file modes, the console. It uses GitLab's hosted Windows runner,
-# which has no Go, so it fetches the pinned release from go.dev and checks it
-# against the SHA-256 go.dev publishes. Not in the release job's needs yet:
-# promote it once it has been green for a while.
+# USERPROFILE, file modes, line endings, the console. It uses GitLab's hosted
+# Windows runner, which has no Go, so it fetches the pinned release from
+# go.dev and checks it against the SHA-256 go.dev publishes. Not in the
+# release job's needs yet: promote it once it has been green for a while.
+#
+# Fetching and unpacking Go took 13 of its 20 minutes. Windows PowerShell's
+# progress bar slows Invoke-WebRequest badly, and Expand-Archive is slow on
+# Go's thousands of files, so the progress bar is off and Windows' own
+# bsdtar unpacks (named by path: a GNU tar from Git for Windows cannot read
+# zips). needs: [] starts it at once, without the build artifacts it never
+# used, and it runs only when something it tests changed.
 unit-test-windows:
-  extends:
-    - .build_common_rules
   stage: test
+  needs: []
   tags:
     - saas-windows-medium-amd64
+  rules:
+    - if: $MIRROR_SYNC == "true"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes: &windows_test_inputs
+        - "**/*.go"
+        - internal/skill/SKILL.md # embedded in the binary
+        - internal/gen/*.tpl
+        - go.mod
+        - go.sum
+        - .gitattributes
+        - .gitlab-ci.yml
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes: *windows_test_inputs
   script:
+    - $ProgressPreference = 'SilentlyContinue'
     - $zip = "go$env:GOLANG_VERSION.windows-amd64.zip"
     - Invoke-WebRequest -Uri "https://go.dev/dl/$zip" -OutFile $zip
     - $want = (Invoke-RestMethod "https://go.dev/dl/?mode=json&include=all").files | Where-Object { $_.filename -eq $zip } | Select-Object -ExpandProperty sha256
     - if (-not $want -or (Get-FileHash $zip -Algorithm SHA256).Hash -ne $want.ToUpper()) { throw "checksum mismatch for $zip" }
-    - Expand-Archive $zip -DestinationPath "$env:TEMP\go-sdk"
+    - New-Item -ItemType Directory -Force "$env:TEMP\go-sdk" | Out-Null
+    - '& "$env:SystemRoot\System32\tar.exe" -xf $zip -C "$env:TEMP\go-sdk"'
+    - if ($LASTEXITCODE -ne 0) { throw "tar failed with exit code $LASTEXITCODE" }
     - $env:Path = "$env:TEMP\go-sdk\go\bin;$env:Path"
     - go version
     - go test ./...
