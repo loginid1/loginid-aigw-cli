@@ -1,93 +1,233 @@
-# loginid-aigw-cli
+# aigw
 
+`aigw` is the command-line interface for the AIGW Developer Console. Use it to set up
+projects, resources and agent policies from a terminal or a script, instead of
+clicking through the console.
 
-
-## Getting started
-
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
-
-```
-cd existing_repo
-git remote add origin https://gitlab.com/loginid/software/loginid-aigw-cli.git
-git branch -M main
-git push -uf origin main
+```console
+$ aigw login
+$ aigw projects list
+$ aigw resources create --project-id <project-id> --name checkout --kind OAUTH_CLIENT \
+    --oauth-client.redirect-uris https://example.com/callback
 ```
 
-## Integrate with your tools
+## Install
 
-* [Set up project integrations](https://gitlab.com/loginid/software/loginid-aigw-cli/-/settings/integrations)
+`aigw` runs on macOS and Linux, on Apple silicon / arm64 and Intel / amd64. Windows
+is not supported yet.
 
-## Collaborate with your team
+### Homebrew (macOS and Linux)
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+```sh
+brew install loginid1/tap/aigw-cli
+aigw version
+```
 
-## Test and Deploy
+`brew upgrade aigw-cli` updates it.
 
-Use the built-in continuous integration in GitLab.
+### Download (macOS and Linux)
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+Each [release](https://github.com/loginid1/loginid-aigw-cli/releases) has a zip for
+each OS and CPU, named `aigw_<version>_<os>_<arch>.zip`:
 
-***
+| OS | CPU | File |
+|---|---|---|
+| macOS | Apple silicon | `aigw_<version>_darwin_arm64.zip` |
+| macOS | Intel | `aigw_<version>_darwin_amd64.zip` |
+| Linux | arm64 | `aigw_<version>_linux_arm64.zip` |
+| Linux | x86-64 | `aigw_<version>_linux_amd64.zip` |
 
-# Editing this README
+Download the zip and `checksums.txt` from the same release, then check, unzip and
+install it. For example, for Linux on x86-64:
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+```sh
+sha256sum --ignore-missing -c checksums.txt
+unzip aigw_<version>_linux_amd64.zip
+sudo install aigw /usr/local/bin/
+aigw version
+```
 
-## Suggestions for a good README
+On macOS, check with `shasum -a 256 --ignore-missing -c checksums.txt`. The binary is
+not notarized yet. If you downloaded it in a browser, macOS blocks the first run
+because it "cannot verify" `aigw`. Clear that with:
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+```sh
+xattr -d com.apple.quarantine aigw
+```
 
-## Name
-Choose a self-explaining name for your project.
+Homebrew does this for you.
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+Each release on the
+[GitLab releases page](https://gitlab.com/loginid/software/loginid-aigw-cli/-/releases)
+also has the Linux builds. To build from source, see [Development](#development).
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+> This README is for the team, on GitLab. GitHub shows `.github/README.md`, the
+> public one. It has the same user sections, without Development, Releases or links
+> to private repos. When you change a user section here, change it there too.
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+## Log in
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+`aigw` authenticates with a devcon API key. Keys start with `aigw_sk_`. Create one in
+the Developer Console, then:
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+```sh
+aigw login
+```
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+`login` asks for the key without showing it, lists your projects with it to check it
+works, and then saves it in the OS credential store (macOS Keychain, Windows
+Credential Manager, or the Secret Service keyring on Linux). A key the API rejects is
+not saved.
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+To check what `aigw` will use:
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+```console
+$ aigw status
+API:    https://aigw.loginid.io
+Key:    aigw_sk_…X7kQ (saved login)
+Check:  ok (118 ms)
+```
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+Other ways to give a key:
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+| Where | Use |
+|---|---|
+| `--api-key <key>` | One command. The key ends up in your shell history. |
+| `AIGW_API_KEY` | CI and scripts. Wins over the saved login. |
+| `aigw login --with-key-stdin < key.txt` | Save a key without a prompt. Add `--confirm` to replace a saved key. |
+| `aigw login --insecure-storage` | Machines with no credential store. The key goes in a `0600` file instead. |
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+`aigw logout` removes the saved key.
 
-## License
-For open source projects, say how it is licensed.
+## Commands
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+Commands have the shape `aigw <noun> <operation>`. Run `aigw <noun> --help` to see
+the operations, and `aigw <noun> <operation> --help` for flags and an example.
+
+| Command | What it manages |
+|---|---|
+| `projects` | Projects: `list`, `get`, `create`, `update`, `delete` |
+| `projects proxy-clients` | OAuth clients for a proxy project |
+| `projects agent-policy` | The project's default agent policy |
+| `projects domain-rules` | Approve, hold or reject agents by domain, for the whole project |
+| `projects kya-issuers` | Which Know Your Agent (KYA) issuers the project trusts |
+| `resources` | Resources: `list`, `get`, `create`, `update`, `replace`, `delete` |
+| `resources auth-settings` | Sign-in page appearance and text |
+| `resources scopes`, `resources signing-keys` | A resource's scopes and signing keys |
+| `resources agent-policy`, `resources domain-rules`, `resources kya-issuers` | The same policies, for one resource |
+| `status` | The API and key in use, and a check of the key |
+| `login`, `logout` | Save or remove the API key |
+| `version` | The `aigw` version |
+
+### How agent access is decided
+
+Three settings decide what happens when an AI agent calls a resource. Each can be set
+on the project and overridden on a resource.
+
+- **Agent policy** gives each kind of proof an agent can show a decision: `APPROVE`,
+  `PENDING` (a person decides) or `REJECT`. With no policy set, every agent is approved.
+- **Domain rules** set a decision for one domain and its subdomains. An `APPROVE` rule
+  can ask for particular proofs with `--methods`.
+- **KYA issuers** list the credential issuers whose credentials count as proof.
+
+```sh
+aigw projects agent-policy update --project-id <project-id> --default-decision PENDING
+aigw projects domain-rules set agents.example.com --project-id <project-id> \
+    --decision APPROVE --methods WBA --methods RDNS
+```
+
+### Request bodies
+
+Each body field has a flag, as `--help` lists. For a field with no flag, or a nested
+one, use `-d` with brackets:
+
+```sh
+aigw projects kya-issuers replace --project-id <project-id> \
+    -d "entries[0][issuerName]=<issuer>" -d "entries[0][minTrust]=KNOWN"
+```
+
+`-d` refuses fields the API does not have. A flag and `-d` cannot set the same field.
+
+### Output
+
+Commands print the API's JSON response on stdout, ready for `jq`. Warnings and
+prompts go to stderr, so stdout always stays JSON. `status` and `version` print text,
+or JSON with `-o json`.
+
+A delete prints `{"deleted": true, ...}` with the IDs of what it removed.
+
+Some responses carry a secret the API never returns again, such as the `clientSecret`
+from `resources create` and `projects proxy-clients create`. `aigw` warns on stderr
+when one does. Store it at once.
+
+### Deleting
+
+A delete asks first. The question names what it deletes and what goes with it:
+deleting a project also deletes its resources and proxy clients. Pass `--confirm` to
+skip the question. With no terminal, as in scripts, CI or an AI agent, `--confirm` is
+required: a delete never runs because nobody was there to answer.
+
+## Scripts, CI and AI agents
+
+- Give the key with `AIGW_API_KEY`.
+- Read stdout as JSON. Check the exit code before you read it.
+- Pass `--confirm` to deletes on purpose. Without it, they fail.
+- Use `aigw status -o json` to check the setup before a run.
+
+| Exit code | Meaning |
+|---|---|
+| 0 | Success |
+| 1 | Any other error: bad input, not found, no network |
+| 3 | Not authenticated: no key, or the API rejected it |
+| 4 | The key lacks a scope. The error names the scope, e.g. `project:write` |
+
+Each command's `--help` names the scope it needs.
+
+## Configuration
+
+`aigw` keeps its settings in `~/.config/aigw/config.toml`, or in
+`$XDG_CONFIG_HOME/aigw/` when that is set. The file never holds the key itself, only
+where it is stored and a masked hint.
+
+## Development
+
+Requires Go (the version is in `mise.toml`) and GNU Make.
+
+```sh
+make build        # ./aigw for this machine
+make test         # unit tests
+make lint         # golangci-lint, installed into build/ on first run
+make all          # lint, test and build
+```
+
+### API commands are generated
+
+The API commands come from the devcon REST spec in
+[loginid-aigw](https://gitlab.com/loginid/software/loginid-aigw)
+(`api/rest/devcon/openapi3.yaml`), pinned to one commit by `AIGW_SPEC_REF` in the
+Makefile.
+
+- `make generate` fetches that spec with `glab` and writes
+  `internal/apicmd/operations_gen.go`, which is data only and checked in.
+- Command names come from `api/devcon-overlay.yaml`, which must cover every
+  operation in the spec.
+- Behaviour (flags, request building, output) is hand-written in `internal/apicmd`.
+
+To pick up API changes, bump `AIGW_SPEC_REF`, run `make generate`, and review the
+diff. `make generate_check` fails when the checked-in file is out of date. To
+generate from a local copy of the spec:
+
+```sh
+make generate AIGW_SPEC=../loginid-aigw/api/rest/devcon/openapi3.yaml
+```
+
+### Releases
+
+A `v*` tag builds the release in GitLab CI with GoReleaser: a zip and a bare binary
+per target, `checksums.txt`, and `THIRD_PARTY_NOTICES.txt`. Installers, signing and
+public hosting are handled by devops. To build the artifacts locally without
+uploading anything:
+
+```sh
+goreleaser release --snapshot --clean
+```
