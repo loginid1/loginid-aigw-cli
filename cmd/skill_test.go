@@ -142,6 +142,34 @@ func TestSkillNamesOnlyRealCommands(t *testing.T) {
 		t.Errorf("frontmatter: %q", shown[:min(len(shown), 60)])
 	}
 
+	for _, bad := range unknownCommands(shown, commandPaths()) {
+		t.Errorf("the skill names %q, which is not a command", bad)
+	}
+
+	if strings.Contains(shown, "{{version}}") {
+		t.Error("version placeholder left in")
+	}
+}
+
+// The check above must catch a made-up operation, a made-up nested operation,
+// and a made-up noun, and must not trip on placeholders, flags or arguments.
+func TestUnknownCommandsCatchesMadeUpPaths(t *testing.T) {
+	t.Parallel()
+
+	text := "Run `aigw projects frobnicate`, `aigw resources scopes rotate-everything` " +
+		"or `aigw widgets list`. Fine: `aigw projects list`, `aigw status -o json`, " +
+		"`aigw <noun> --help`, `aigw projects get <id>`, `aigw login`."
+
+	got := unknownCommands(text, commandPaths())
+	want := []string{"aigw projects frobnicate", "aigw resources scopes rotate-everything", "aigw widgets list"}
+
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// commandPaths is every command path in the real tree, e.g. "projects list".
+func commandPaths() map[string]bool {
 	known := map[string]bool{}
 
 	var walk func(c *cobra.Command, path string)
@@ -156,23 +184,50 @@ func TestSkillNamesOnlyRealCommands(t *testing.T) {
 
 	walk(cmd.NewRootCommand(), "")
 
-	nouns := `projects|resources|status|login|logout|skill|version`
-	cmdRe := regexp.MustCompile("`aigw ((?:" + nouns + `)(?: [a-z][a-z-]*)*)`)
+	return known
+}
 
-	for _, m := range cmdRe.FindAllStringSubmatch(shown, -1) {
-		words := strings.Fields(m[1])
-		// Trailing words may be placeholders such as <noun>; check the
-		// longest real prefix is not empty.
-		for len(words) > 0 && !known[strings.Join(words, " ")] {
-			words = words[:len(words)-1]
-		}
+// commandRe matches a code span that starts `aigw word word...`: the words
+// stop at the first flag, placeholder or argument that is not a lowercase word.
+var commandRe = regexp.MustCompile("`aigw ([a-z][a-z-]*(?: [a-z][a-z-]*)*)")
 
-		if len(words) == 0 {
-			t.Errorf("the skill names %q, which is not a command", m[0])
+// unknownCommands returns each `aigw ...` in text whose whole word path is not
+// a command in known.
+func unknownCommands(text string, known map[string]bool) []string {
+	var bad []string
+
+	for _, m := range commandRe.FindAllStringSubmatch(text, -1) {
+		if !known[m[1]] {
+			bad = append(bad, "aigw "+m[1])
 		}
 	}
 
-	if strings.Contains(shown, "{{version}}") {
-		t.Error("version placeholder left in")
+	return bad
+}
+
+// --body is for another tool's instructions file: no frontmatter, and no note
+// that `aigw skill install` owns the file.
+func TestSkillShowBody(t *testing.T) {
+	t.Parallel()
+
+	full, _ := run(t, "", "skill", "show")
+
+	body, err := run(t, "", "skill", "show", "--body")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.HasPrefix(body, "# aigw\n") {
+		t.Errorf("body starts %q", body[:min(len(body), 40)])
+	}
+
+	for _, gone := range []string{"name: aigw", "description:", "Written by aigw", "edits are lost"} {
+		if strings.Contains(body, gone) {
+			t.Errorf("body still has %q", gone)
+		}
+	}
+
+	if !strings.HasSuffix(full, body) {
+		t.Error("body is not the tail of the full skill")
 	}
 }

@@ -106,16 +106,30 @@ func newSkillUninstallCommand() *cobra.Command {
 }
 
 func newSkillShowCommand() *cobra.Command {
-	return &cobra.Command{
+	var body bool
+
+	cmd := &cobra.Command{
 		Use:   "show",
 		Short: "Print the skill, e.g. to add it to another AI tool",
+		Long: "show prints the skill as `aigw skill install` writes it. With --body it leaves\n" +
+			"out the Claude Code frontmatter and the install note, for another tool's\n" +
+			"instructions file.",
 		Example: "  aigw skill show\n" +
-			"  aigw skill show > AGENTS.md",
+			"  aigw skill show --body >> AGENTS.md",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			_, err := fmt.Fprint(cmd.OutOrStdout(), skill.Render(version.Version))
+			text := skill.Render(version.Version)
+			if body {
+				text = skill.Body(version.Version)
+			}
+
+			_, err := fmt.Fprint(cmd.OutOrStdout(), text)
 
 			return err
 		},
 	}
+
+	cmd.Flags().BoolVar(&body, "body", false, "Leave out the frontmatter and the install note")
+
+	return cmd
 }

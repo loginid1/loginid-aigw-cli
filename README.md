@@ -198,8 +198,8 @@ This writes `~/.claude/skills/aigw/SKILL.md` (or `$CLAUDE_CONFIG_DIR/skills/aigw
 that is set). Start a new Claude Code session to use it. The skill ships inside `aigw`,
 so it always matches your version: run `aigw skill install` again after you upgrade.
 
-`aigw skill uninstall` removes it. `aigw skill show` prints it, for example to add it to
-another AI tool's instructions file.
+`aigw skill uninstall` removes it. To give the same instructions to another AI tool,
+add them to its instructions file, for example `aigw skill show --body >> AGENTS.md`.
 
 The skill does not pre-approve any command. Claude Code still asks you before it runs
 `aigw`, as it does for any shell command.

@@ -68,6 +68,19 @@ change it.
   project also deletes its resources and proxy clients. Before running one, tell the
   user exactly what it removes and wait for a clear yes. Only then pass `--confirm`.
   Without `--confirm` the command fails, because there is no terminal to ask on.
+- **Replace and set.** These are not deletes, so they have no prompt and no
+  `--confirm`, but they overwrite what is there:
+  - `resources replace` gives every field the value sent, and resets any field you
+    leave out. A `clientSecret` you send replaces the stored one.
+  - `kya-issuers replace` makes the entries you send the whole list. With no entries it
+    clears the list.
+  - `domain-rules set` and `kya-issuers set` replace any rule or entry already there for
+    that domain or issuer. `kya-issuers set` without `--min-trust` sets it back to
+    `KNOWN`.
+
+  Prefer `update` where there is one: it changes only the fields you name. Before any
+  `replace` or `set`, `get` or `list` the current state, tell the user what will change
+  and what will be dropped, and wait for a clear yes.
 - **Secrets.** `resources create` and `projects proxy-clients create` can return a
   `clientSecret` that the API never shows again. Tell the user to store it now. Do not
   repeat it, write it to a file, or put it in a commit unless the user asks.

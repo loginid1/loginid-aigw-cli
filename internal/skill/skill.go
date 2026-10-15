@@ -30,6 +30,29 @@ func Render(version string) string {
 	return strings.ReplaceAll(template, "{{version}}", version)
 }
 
+// Body returns the skill without its frontmatter and the install note, for
+// another tool's instructions file (e.g. AGENTS.md), where neither applies.
+func Body(version string) string {
+	s := Render(version)
+
+	// The frontmatter is the block between the first two "---" lines.
+	if rest, ok := strings.CutPrefix(s, "---\n"); ok {
+		if _, after, found := strings.Cut(rest, "\n---\n"); found {
+			s = after
+		}
+	}
+
+	var kept []string
+
+	for line := range strings.Lines(s) {
+		if !strings.HasPrefix(line, marker) {
+			kept = append(kept, line)
+		}
+	}
+
+	return strings.TrimLeft(strings.Join(kept, ""), "\n")
+}
+
 // Dir is where Claude Code reads the skill: $CLAUDE_CONFIG_DIR/skills/aigw
 // when that is set, as Claude Code itself does, else ~/.claude/skills/aigw.
 func Dir() (string, error) {
