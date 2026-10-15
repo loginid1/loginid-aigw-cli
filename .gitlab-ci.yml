@@ -162,36 +162,32 @@ release:
 # SECRET_DETECTION_DISABLED and DEPENDENCY_SCANNING_DISABLED so the included
 # security jobs stay out of it.
 #
-# GITHUB_MIRROR_SSH_KEY_B64 is a base64 write deploy key on the GitHub repo,
-# stored as a protected variable, so only protected refs can push. v* tags
-# must therefore be protected tags, or the tag pipeline's job has no key.
+# GITHUB_MIRROR_TOKEN is a fine-grained GitHub token for loginid1/loginid-aigw-cli
+# only, with Contents and Workflows read/write. A deploy key cannot do this:
+# GitHub refuses pushes that add or change .github/workflows without the
+# workflow permission. It is a protected variable, so only protected refs can
+# push; v* tags are protected tags for that reason.
 # A tag whose commit is not on main is not in the clone, so it is not pushed.
 # The push is not forced: if GitHub ever has commits GitLab lacks, or a tag was
 # moved on GitLab after it was mirrored, the job fails instead of overwriting.
 mirror-sync:
-  stage: build
-  needs: [] # start at once; it does not depend on the build or tests
+  # The last stage with no needs: it starts at once, and if it fails, the
+  # tests and the GitLab release in a tag pipeline still run.
+  stage: release
+  needs: []
   image: alpine:3.22
   variables:
     GIT_STRATEGY: none # clones main itself below, whatever ref the pipeline ran on
-    MIRROR_URL: git@github.com:loginid1/loginid-aigw-cli.git
-    # From `gh api meta --jq .ssh_keys`, pinned rather than trusted on first use.
-    GITHUB_KNOWN_HOSTS: |
-      github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
-      github.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=
   rules:
     - if: $MIRROR_SYNC == "true"
     # The same pattern as the release job.
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/
   before_script:
-    # Unprotected refs do not get the protected key; say so instead of an ssh error.
-    - '[ -n "$GITHUB_MIRROR_SSH_KEY_B64" ] || { echo "GITHUB_MIRROR_SSH_KEY_B64 is empty: is this ref protected?"; exit 1; }'
-    - apk add --no-cache git openssh-client
-    - install -d -m 700 ~/.ssh
-    - echo "$GITHUB_MIRROR_SSH_KEY_B64" | base64 -d > ~/.ssh/mirror_key && chmod 600 ~/.ssh/mirror_key
-    - printf '%s' "$GITHUB_KNOWN_HOSTS" > ~/.ssh/known_hosts
-    - export GIT_SSH_COMMAND="ssh -i ~/.ssh/mirror_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+    # Unprotected refs do not get the protected token; say so instead of a 401.
+    - '[ -n "$GITHUB_MIRROR_TOKEN" ] || { echo "GITHUB_MIRROR_TOKEN is empty: is this ref protected?"; exit 1; }'
+    - apk add --no-cache git
   script:
     - git clone --bare --single-branch --branch main "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" src.git
     - echo "pushing main at $(git -C src.git rev-parse main)"
-    - git -C src.git push "$MIRROR_URL" main:main "refs/tags/v*:refs/tags/v*"
+    # The token is masked in the job log.
+    - git -C src.git push "https://x-access-token:${GITHUB_MIRROR_TOKEN}@github.com/loginid1/loginid-aigw-cli.git" main:main "refs/tags/v*:refs/tags/v*"
