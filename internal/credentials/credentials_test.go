@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -91,8 +92,9 @@ func TestInsecureFileStorage(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Windows has no mode bits to check.
 	perm := info.Mode().Perm()
-	if perm != 0o600 {
+	if runtime.GOOS != "windows" && perm != 0o600 {
 		t.Errorf("credentials.toml mode = %o, want 600", perm)
 	}
 

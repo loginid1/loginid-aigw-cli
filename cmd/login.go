@@ -101,7 +101,8 @@ func newLoginCommand() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&fromStdin, "with-key-stdin", false, "Read the API key from standard input")
-	cmd.Flags().BoolVar(&insecure, "insecure-storage", false, "Store the key in a plain 0600 file instead of the OS credential store")
+	cmd.Flags().BoolVar(&insecure, "insecure-storage", false, "Store the key in a plain file instead of the OS credential store "+
+		"(mode 0600 on macOS and Linux; on Windows, protected only by your user folder's permissions)")
 	cmd.Flags().BoolVar(&confirm, "confirm", false, "Replace a saved key without asking")
 
 	return cmd

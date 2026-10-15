@@ -13,8 +13,8 @@ $ aigw resources create --project-id <project-id> --name checkout --kind OAUTH_C
 
 ## Install
 
-`aigw` runs on macOS and Linux, on Apple silicon / arm64 and Intel / amd64. Windows
-is not supported yet.
+`aigw` runs on macOS, Linux and Windows, on arm64 (including Apple silicon) and
+x86-64.
 
 ### Homebrew (macOS and Linux)
 
@@ -25,7 +25,7 @@ aigw version
 
 `brew upgrade aigw-cli` updates it.
 
-### Download (macOS and Linux)
+### Download (macOS, Linux and Windows)
 
 Each [release](https://github.com/loginid1/loginid-aigw-cli/releases) has a zip for
 each OS and CPU, named `aigw_<version>_<os>_<arch>.zip`:
@@ -36,6 +36,8 @@ each OS and CPU, named `aigw_<version>_<os>_<arch>.zip`:
 | macOS | Intel | `aigw_<version>_darwin_amd64.zip` |
 | Linux | arm64 | `aigw_<version>_linux_arm64.zip` |
 | Linux | x86-64 | `aigw_<version>_linux_amd64.zip` |
+| Windows | x86-64 | `aigw_<version>_windows_amd64.zip` |
+| Windows | arm64 | `aigw_<version>_windows_arm64.zip` |
 
 Download the zip and `checksums.txt` from the same release, then check, unzip and
 install it. For example, for Linux on x86-64:
@@ -56,6 +58,27 @@ xattr -d com.apple.quarantine aigw
 ```
 
 Homebrew does this for you.
+
+### Windows
+
+In PowerShell, in the folder with the zip and `checksums.txt` (use `arm64` in place of
+`amd64` on an arm64 PC):
+
+```powershell
+$zip = "aigw_<version>_windows_amd64.zip"
+(Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()   # must match the line for $zip:
+Select-String -SimpleMatch $zip checksums.txt
+Expand-Archive $zip -DestinationPath "$env:LOCALAPPDATA\Programs\aigw"
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+[Environment]::SetEnvironmentVariable("Path", "$userPath;$env:LOCALAPPDATA\Programs\aigw", "User")
+```
+
+Open a new terminal, then run `aigw version`. The binary is not signed yet, so if
+Windows warns that the file came from the internet, run
+`Unblock-File "$env:LOCALAPPDATA\Programs\aigw\aigw.exe"`.
+
+In Git Bash, prompts such as `aigw login` need a real console: run them as
+`winpty aigw login`, or use Windows Terminal.
 
 Each release on the
 [GitLab releases page](https://gitlab.com/loginid/software/loginid-aigw-cli/-/releases)
@@ -95,7 +118,7 @@ Other ways to give a key:
 | `--api-key <key>` | One command. The key ends up in your shell history. |
 | `AIGW_API_KEY` | CI and scripts. Wins over the saved login. |
 | `aigw login --with-key-stdin < key.txt` | Save a key without a prompt. Add `--confirm` to replace a saved key. |
-| `aigw login --insecure-storage` | Machines with no credential store. The key goes in a `0600` file instead. |
+| `aigw login --insecure-storage` | Machines with no credential store. The key goes in a plain file instead: mode `0600` on macOS and Linux; on Windows, protected only by your user folder's permissions. |
 
 `aigw logout` removes the saved key.
 
