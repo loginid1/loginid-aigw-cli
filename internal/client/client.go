@@ -97,38 +97,57 @@ func New(base, apiKey string) *Client {
 	}
 }
 
+// Where ResolveAPIKey found the key, for `aigw status` to show.
+const (
+	SourceFlag       = "--api-key"
+	SourceSavedLogin = "saved login"
+)
+
+// APIKey is a key and where it came from.
+type APIKey struct {
+	Value string
+	// Source is SourceFlag, SourceSavedLogin or the env var's name.
+	Source string
+}
+
 // ResolveAPIKey returns explicit when set. Otherwise, for the real API, it
 // returns $AIGW_API_KEY, else the key `aigw login` saved; for a temporary base
 // URL, only $AIGW_TEMP_API_KEY, so neither of the real keys can be sent there.
 // It returns ErrNotLoggedIn when there is none.
-func ResolveAPIKey(explicit string, temporaryBase bool) (string, error) {
+func ResolveAPIKey(explicit string, temporaryBase bool) (APIKey, error) {
 	if explicit != "" {
-		return checked(explicit, "--api-key")
+		key, err := checked(explicit, SourceFlag)
+
+		return APIKey{key, SourceFlag}, err
 	}
 
 	if temporaryBase {
 		if v := os.Getenv(EnvTempAPIKey); v != "" {
-			return checked(v, EnvTempAPIKey)
+			key, err := checked(v, EnvTempAPIKey)
+
+			return APIKey{key, EnvTempAPIKey}, err
 		}
 
-		return "", ErrNotLoggedIn
+		return APIKey{}, ErrNotLoggedIn
 	}
 
 	if v := os.Getenv(EnvAPIKey); v != "" {
-		return checked(v, EnvAPIKey)
+		key, err := checked(v, EnvAPIKey)
+
+		return APIKey{key, EnvAPIKey}, err
 	}
 
 	dir, err := config.Dir()
 	if err != nil {
-		return "", err
+		return APIKey{}, err
 	}
 
 	key, err := credentials.Load(dir, config.DefaultProfile)
 	if errors.Is(err, credentials.ErrNotLoggedIn) {
-		return "", ErrNotLoggedIn
+		return APIKey{}, ErrNotLoggedIn
 	}
 
-	return key, err
+	return APIKey{key, SourceSavedLogin}, err
 }
 
 // Request is one API call, described independently of where its inputs came

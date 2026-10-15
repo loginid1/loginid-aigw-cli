@@ -3,6 +3,7 @@ package apicmd
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -57,7 +59,7 @@ type Target struct {
 	Temporary bool
 }
 
-// ResolveTarget returns DefaultAPIBase, the spec's server. It is not a flag:
+// ResolveTarget returns APIBase, the spec's server. It is not a flag:
 // a key sent to a URL the user typed would leak.
 //
 // TEMP: envTempAPIBase overrides it, for testing against local and staging
@@ -68,7 +70,7 @@ type Target struct {
 func ResolveTarget() (Target, error) {
 	override := os.Getenv(envTempAPIBase)
 	if override == "" {
-		return Target{BaseURL: DefaultAPIBase}, nil
+		return Target{BaseURL: APIBase}, nil
 	}
 
 	u, err := url.Parse(override)
@@ -259,14 +261,12 @@ func run(cmd *cobra.Command, op *Operation, resolveTarget func() (Target, error)
 	flagKey, _ := cmd.Flags().GetString(flagAPIKey)
 
 	apiKey, err := client.ResolveAPIKey(flagKey, target.Temporary)
-	if errors.Is(err, client.ErrNotLoggedIn) && target.Temporary {
-		return &ExitError{Code: ExitNotAuthenticated, Err: fmt.Errorf(
-			"%s is set: pass --%s or set %s (%s and the saved login are not used)",
-			envTempAPIBase, flagAPIKey, client.EnvTempAPIKey, client.EnvAPIKey)}
+	if errors.Is(err, client.ErrNotLoggedIn) {
+		return NotLoggedIn(target)
 	}
 
 	if err != nil {
-		mapped := exitError(err)
+		mapped := ExitErrorFor(err)
 
 		var exitErr *ExitError
 		if errors.As(mapped, &exitErr) {
@@ -310,19 +310,89 @@ func run(cmd *cobra.Command, op *Operation, resolveTarget func() (Target, error)
 		}
 	}
 
+	c := client.New(target.BaseURL, apiKey.Value)
+
 	if op.Method == http.MethodDelete {
-		err = confirmDelete(cmd, op, args)
+		err = confirmDelete(cmd, op, args, c, req)
 		if err != nil {
 			return err
 		}
 	}
 
-	body, err := client.New(target.BaseURL, apiKey).Do(cmd.Context(), req)
+	body, err := c.Do(cmd.Context(), req)
 	if err != nil {
-		return exitError(err)
+		return ExitErrorFor(err)
+	}
+
+	warnOneTimeSecrets(cmd.ErrOrStderr(), body)
+
+	// A delete answers 204 with no body. Say what went, so a script or an
+	// agent has something to read and a person sees it worked.
+	if op.Method == http.MethodDelete && len(bytes.TrimSpace(body)) == 0 {
+		body, err = doneBody(op, req.PathParams)
+		if err != nil {
+			return err
+		}
 	}
 
 	return printJSON(cmd.OutOrStdout(), body)
+}
+
+// oneTimeSecrets are the response fields the API returns once and never
+// again: the spec marks clientSecret "Shown once" on ProjectProxyClientSecret
+// and "Returned once" on ResourceCreateResult.
+var oneTimeSecrets = []string{"clientSecret"}
+
+// warnOneTimeSecrets tells the user, on stderr, to store any one-time secret
+// in body. stdout stays pure JSON for whoever reads it.
+func warnOneTimeSecrets(w io.Writer, body []byte) {
+	var top map[string]any
+	if json.Unmarshal(body, &top) != nil {
+		return
+	}
+
+	for _, field := range oneTimeSecrets {
+		if v, _ := top[field].(string); v != "" {
+			fmt.Fprintf(w, "warning: %s is shown only this once and cannot be read back; store it now\n", field)
+		}
+	}
+}
+
+// doneKeys maps the verb of each DELETE command to the key its result
+// reports, so `agent-policy clear` says "cleared", not "deleted".
+//
+//nolint:goconst // the verbs as the overlay spells them, which operations_gen.go repeats
+var doneKeys = map[string]string{
+	"delete": "deleted",
+	"remove": "removed",
+	"revoke": "revoked",
+	"clear":  "cleared",
+}
+
+// DoneKey is the key op's empty-body result reports: its verb in the past
+// tense, or "ok" for a verb doneKeys does not know.
+func DoneKey(op *Operation) string {
+	if key, ok := doneKeys[op.Command[len(op.Command)-1]]; ok {
+		return key
+	}
+
+	return "ok"
+}
+
+// doneBody is {"<DoneKey>": true} plus the path parameters that named what
+// went, e.g. {"deleted": true, "projectId": "…"}.
+func doneBody(op *Operation, pathParams map[string]string) ([]byte, error) {
+	out := map[string]any{DoneKey(op): true}
+	for k, v := range pathParams {
+		out[k] = v
+	}
+
+	body, err := json.Marshal(out)
+	if err != nil {
+		return nil, fmt.Errorf("format result: %w", err)
+	}
+
+	return body, nil
 }
 
 // requiredExample shows the command with every unconditionally required
@@ -435,10 +505,16 @@ func buildBody(cmd *cobra.Command, op *Operation) (map[string]any, error) {
 
 	var err error
 
+	// The body fields set by flags, by API name, so -d cannot quietly
+	// overwrite one.
+	byFlag := map[string]string{}
+
 	for _, p := range op.Params {
 		if p.In != InBody || !cmd.Flags().Changed(p.Flag) {
 			continue
 		}
+
+		byFlag[p.Name] = p.Flag
 
 		var v any
 
@@ -484,6 +560,10 @@ func buildBody(cmd *cobra.Command, op *Operation) (map[string]any, error) {
 
 	data, _ := cmd.Flags().GetStringArray(flagData)
 	for _, d := range data {
+		if flag := overlappingFlag(d, byFlag); flag != "" {
+			return nil, fmt.Errorf("-d %q and --%s set the same field: use one of them", d, flag)
+		}
+
 		root, err = applyData(root, op, d)
 		if err != nil {
 			return nil, fmt.Errorf("-d %q: %w", d, err)
@@ -493,7 +573,7 @@ func buildBody(cmd *cobra.Command, op *Operation) (map[string]any, error) {
 	return root.(map[string]any), nil
 }
 
-func confirmDelete(cmd *cobra.Command, op *Operation, args []string) error {
+func confirmDelete(cmd *cobra.Command, op *Operation, args []string, c *client.Client, req *client.Request) error {
 	if ok, _ := cmd.Flags().GetBool(flagConfirm); ok {
 		return nil
 	}
@@ -508,7 +588,7 @@ func confirmDelete(cmd *cobra.Command, op *Operation, args []string) error {
 		return fmt.Errorf("refusing to run %q without --%s when input is not a terminal%s", target, flagConfirm, prompt.NotTerminalHint())
 	}
 
-	fmt.Fprintf(cmd.ErrOrStderr(), "This runs %q and cannot be undone. Continue? [y/N] ", target)
+	fmt.Fprint(cmd.ErrOrStderr(), DeletePrompt(cmd.Context(), op, target, c, req))
 
 	line, _ := bufio.NewReader(in).ReadString('\n')
 	if answer := strings.ToLower(strings.TrimSpace(line)); answer != "y" && answer != "yes" {
@@ -516,6 +596,61 @@ func confirmDelete(cmd *cobra.Command, op *Operation, args []string) error {
 	}
 
 	return nil
+}
+
+// DeletePrompt is the question confirmDelete asks: what the command deletes,
+// by name when the API can say, and what goes with it, in the spec's words.
+func DeletePrompt(ctx context.Context, op *Operation, target string, c *client.Client, req *client.Request) string {
+	var b strings.Builder
+
+	b.WriteString("This runs " + strconv.Quote(target))
+
+	if name := lookupName(ctx, op, c, req); name != "" {
+		noun := strings.TrimSuffix(op.Command[len(op.Command)-2], "s")
+		fmt.Fprintf(&b, ", deleting %s %q", noun, name)
+	}
+
+	b.WriteString(".\n")
+
+	if op.Long != "" {
+		b.WriteString(op.Long + "\n")
+	}
+
+	b.WriteString("This cannot be undone. Continue? [y/N] ")
+
+	return b.String()
+}
+
+// lookupName fetches what a delete is about to remove, through the GET on the
+// same path, and returns its name. Any failure returns "": the prompt is still
+// right without a name, and the delete reports its own errors.
+func lookupName(ctx context.Context, del *Operation, c *client.Client, req *client.Request) string {
+	i := slices.IndexFunc(Operations, func(op Operation) bool {
+		return op.Method == http.MethodGet && op.Path == del.Path
+	})
+	if i < 0 {
+		return ""
+	}
+
+	body, err := c.Do(ctx, &client.Request{
+		Method:     http.MethodGet,
+		Path:       Operations[i].Path,
+		PathParams: req.PathParams,
+		Scope:      Operations[i].Scope,
+	})
+	if err != nil {
+		return ""
+	}
+
+	var got struct {
+		Name string `json:"name"`
+	}
+
+	if json.Unmarshal(body, &got) != nil {
+		return ""
+	}
+
+	return got.Name
 }
 
 // printJSON writes an indented copy of body. A body that is empty, as on a 204,
