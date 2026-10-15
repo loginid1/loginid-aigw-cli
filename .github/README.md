@@ -172,9 +172,15 @@ or JSON with `-o json`.
 A `delete`, `remove`, `revoke` or `clear` prints its own verb and the IDs it acted on,
 e.g. `{"deleted": true, "projectId": "…"}` or `{"revoked": true, ...}`.
 
-Some responses carry a secret the API never returns again, such as the `clientSecret`
-from `resources create` and `projects proxy-clients create`. `aigw` warns on stderr
-when one does. Store it at once.
+Some responses carry a secret the API never returns again: the `clientSecret` from
+`resources create` and `projects proxy-clients create`. `aigw` warns on stderr when
+one does. Store it at once. To keep it off the screen and out of logs, pass
+`--secret-file <path>`: the secret goes to that new file (mode `0600` on macOS and
+Linux), and the output says where it went instead.
+
+```sh
+aigw projects proxy-clients create --project-id <project-id> --secret-file ./proxy-secret
+```
 
 ### Deleting
 
@@ -198,6 +204,26 @@ required: a delete never runs because nobody was there to answer.
 | 4 | The key lacks a scope. The error names the scope, e.g. `project:write` |
 
 Each command's `--help` names the scope it needs.
+
+## Use with Claude Code
+
+`aigw` carries a [Claude Code skill](https://code.claude.com/docs/en/skills)
+that teaches Claude how to use it: check the login first, find commands with `--help`,
+ask you before every delete, and keep secrets out of the chat.
+
+```sh
+aigw skill install
+```
+
+This writes `~/.claude/skills/aigw/SKILL.md` (or `$CLAUDE_CONFIG_DIR/skills/aigw/` when
+that is set). Start a new Claude Code session to use it. The skill ships inside `aigw`,
+so it always matches your version: run `aigw skill install` again after you upgrade.
+
+`aigw skill uninstall` removes it. To give the same instructions to another AI tool,
+add them to its instructions file, for example `aigw skill show --body >> AGENTS.md`.
+
+The skill does not pre-approve any command. Claude Code still asks you before it runs
+`aigw`, as it does for any shell command.
 
 ## Configuration
 

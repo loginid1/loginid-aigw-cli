@@ -243,6 +243,10 @@ func newOperationCommand(op *Operation, target func() (Target, error)) *cobra.Co
 		fs.Bool(flagConfirm, false, "Skip the confirmation prompt")
 	}
 
+	if len(op.SecretFields) > 0 {
+		fs.String(flagSecretFile, "", secretFileHelp(op))
+	}
+
 	return cmd
 }
 
@@ -319,12 +323,38 @@ func run(cmd *cobra.Command, op *Operation, resolveTarget func() (Target, error)
 		}
 	}
 
+	// Created before the request, so a path that cannot be written fails
+	// while there is still no secret to lose.
+	secretPath, _ := cmd.Flags().GetString(flagSecretFile)
+
+	var secretFile *os.File
+
+	if secretPath != "" {
+		secretFile, err = createSecretFile(secretPath)
+		if err != nil {
+			return err
+		}
+	}
+
 	body, err := c.Do(cmd.Context(), req)
 	if err != nil {
+		discardSecretFile(secretFile)
+
 		return ExitErrorFor(err)
 	}
 
-	warnOneTimeSecrets(cmd.ErrOrStderr(), body)
+	if secretFile != nil {
+		body, err = moveSecrets(cmd.ErrOrStderr(), op, body, secretFile)
+		if err != nil {
+			// The file could not take the secret, which exists nowhere
+			// else now: print it rather than lose it.
+			_ = printJSON(cmd.OutOrStdout(), body)
+
+			return err
+		}
+	} else {
+		warnOneTimeSecrets(cmd.ErrOrStderr(), op, body)
+	}
 
 	// A delete answers 204 with no body. Say what went, so a script or an
 	// agent has something to read and a person sees it worked.
@@ -336,26 +366,6 @@ func run(cmd *cobra.Command, op *Operation, resolveTarget func() (Target, error)
 	}
 
 	return printJSON(cmd.OutOrStdout(), body)
-}
-
-// oneTimeSecrets are the response fields the API returns once and never
-// again: the spec marks clientSecret "Shown once" on ProjectProxyClientSecret
-// and "Returned once" on ResourceCreateResult.
-var oneTimeSecrets = []string{"clientSecret"}
-
-// warnOneTimeSecrets tells the user, on stderr, to store any one-time secret
-// in body. stdout stays pure JSON for whoever reads it.
-func warnOneTimeSecrets(w io.Writer, body []byte) {
-	var top map[string]any
-	if json.Unmarshal(body, &top) != nil {
-		return
-	}
-
-	for _, field := range oneTimeSecrets {
-		if v, _ := top[field].(string); v != "" {
-			fmt.Fprintf(w, "warning: %s is shown only this once and cannot be read back; store it now\n", field)
-		}
-	}
 }
 
 // doneKeys maps the verb of each DELETE command to the key its result

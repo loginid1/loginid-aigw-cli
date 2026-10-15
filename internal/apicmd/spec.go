@@ -38,6 +38,9 @@ type Operation struct {
 	// RequiredLists names required top-level lists of objects. They have no
 	// flag, so help points at -d for them.
 	RequiredLists []string
+	// SecretFields names top-level response fields the API returns only once,
+	// e.g. "clientSecret". The command gets --secret-file for them.
+	SecretFields []string
 	// HasBody is true when the operation takes a JSON request body.
 	HasBody bool
 }

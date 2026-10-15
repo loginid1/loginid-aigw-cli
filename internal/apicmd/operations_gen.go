@@ -314,7 +314,8 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "projectId", Flag: "project-id", In: "path", Type: "string", Required: true, Desc: "Project the client belongs to. Must belong to the caller's account."},
 		},
-		HasBody: false,
+		HasBody:      false,
+		SecretFields: []string{"clientSecret"},
 	},
 	{
 		ID:      "projects#listProxyClients",
@@ -551,7 +552,8 @@ var Operations = []Operation{
 			"kind":                                []string{"EXCHANGE", "OAUTH_CLIENT"},
 			"oauthClient.tokenEndpointAuthMethod": []string{"CLIENT_SECRET_BASIC", "CLIENT_SECRET_POST", "NONE"},
 		},
-		HasBody: true,
+		HasBody:      true,
+		SecretFields: []string{"clientSecret"},
 	},
 	{
 		ID:      "resources#delete",
