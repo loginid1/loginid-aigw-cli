@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -592,5 +594,131 @@ func TestDeleteResultUsesTheCommandsVerb(t *testing.T) {
 		if err != nil || !strings.Contains(out, `"`+want+`": true`) || strings.Contains(out, "deleted") {
 			t.Errorf("%s: %v, output %q", args, err, out)
 		}
+	}
+}
+
+const secretReply = `{"id":"pxc-1","clientId":"c","clientSecret":"s3cr3t"}`
+
+func proxyCreate(path string) []string {
+	return []string{projects, "proxy-clients", "create", "--project-id", "p1", "--secret-file", path, apiKey, "k"}
+}
+
+// streams is a command's stdout and stderr, kept apart.
+type streams struct{ stdout, stderr string }
+
+// runSplit runs args with stdout and stderr apart.
+func runSplit(t *testing.T, base string, args ...string) (streams, error) {
+	t.Helper()
+
+	var outBuf, errBuf bytes.Buffer
+
+	root := &cobra.Command{Use: "aigw", SilenceUsage: true, SilenceErrors: true}
+	apicmd.AddAllWithBase(root, base)
+	root.SetOut(&outBuf)
+	root.SetErr(&errBuf)
+	root.SetArgs(args)
+
+	err := root.Execute()
+
+	return streams{outBuf.String(), errBuf.String()}, err
+}
+
+func TestSecretFileKeepsTheSecretOffStdout(t *testing.T) {
+	t.Parallel()
+
+	srv, _ := serve(t, http.StatusCreated, secretReply)
+	path := filepath.Join(t.TempDir(), "secret")
+
+	out, err := runSplit(t, srv.URL, proxyCreate(path)...)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr := out.stdout, out.stderr
+
+	if strings.Contains(stdout, "s3cr3t") || strings.Contains(stderr, "s3cr3t") {
+		t.Errorf("secret printed: stdout %q, stderr %q", stdout, stderr)
+	}
+
+	var got map[string]any
+	if json.Unmarshal([]byte(stdout), &got) != nil || got["clientSecret"] != "written to "+path || got["clientId"] != "c" {
+		t.Errorf("stdout = %q", stdout)
+	}
+
+	if !strings.Contains(stderr, "Wrote clientSecret to "+path) {
+		t.Errorf("stderr = %q", stderr)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil || string(content) != "s3cr3t\n" {
+		t.Errorf("file = %q, %v", content, err)
+	}
+
+	info, _ := os.Stat(path)
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+		t.Errorf("mode %o, want 600", info.Mode().Perm())
+	}
+}
+
+// An existing file is refused before the request, so no secret is created
+// that could then not be saved.
+func TestSecretFileRefusesAnExistingFile(t *testing.T) {
+	t.Parallel()
+
+	srv, got := serve(t, http.StatusCreated, secretReply)
+	path := filepath.Join(t.TempDir(), "secret")
+
+	err := os.WriteFile(path, []byte("earlier secret\n"), 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = runSplit(t, srv.URL, proxyCreate(path)...)
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("want an already-exists error, got %v", err)
+	}
+
+	if got.method != "" {
+		t.Error("the request was sent")
+	}
+
+	if content, _ := os.ReadFile(path); string(content) != "earlier secret\n" {
+		t.Errorf("file overwritten: %q", content)
+	}
+}
+
+func TestSecretFileIsRemovedWhenNothingIsWritten(t *testing.T) {
+	t.Parallel()
+
+	for name, tc := range map[string]struct {
+		status int
+		reply  string
+		ok     bool
+	}{
+		"request fails":       {http.StatusForbidden, `{"msgCode":"forbidden","msg":"no"}`, false},
+		"no secret in answer": {http.StatusCreated, `{"id":"pxc-1"}`, true},
+	} {
+		srv, _ := serve(t, tc.status, tc.reply)
+		path := filepath.Join(t.TempDir(), "secret")
+
+		_, err := runSplit(t, srv.URL, proxyCreate(path)...)
+		if (err == nil) != tc.ok {
+			t.Errorf("%s: err %v", name, err)
+		}
+
+		_, err = os.Stat(path)
+		if !os.IsNotExist(err) {
+			t.Errorf("%s: file left behind: %v", name, err)
+		}
+	}
+}
+
+// Only commands whose response has a one-time secret get the flag.
+func TestSecretFileOnlyWhereThereIsASecret(t *testing.T) {
+	t.Parallel()
+
+	_, err := runSplit(t, "http://127.0.0.1:1", projects, "create", "--name", "x", "--secret-file", "f", apiKey, "k")
+	if err == nil || !strings.Contains(err.Error(), "unknown flag") {
+		t.Errorf("projects create --secret-file: %v", err)
 	}
 }

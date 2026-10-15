@@ -108,3 +108,45 @@ func TestGenerateRefusesRecursiveSchemas(t *testing.T) {
 		t.Errorf("a self-referencing schema: %v", err)
 	}
 }
+
+func TestResponseSecretsFindsTopLevelSecretFields(t *testing.T) {
+	t.Parallel()
+
+	s := &spec{}
+	s.Components.Schemas = map[string]*schema{
+		"Created": {Type: tObject, Properties: map[string]*schema{
+			"id":           {Type: tString},
+			"clientSecret": {Type: tString},
+		}},
+		"Nested": {Type: tObject, Properties: map[string]*schema{
+			"inner": {Ref: "#/components/schemas/Created"},
+		}},
+	}
+
+	op := func(code, ref string) *operation {
+		o := &operation{}
+		o.Responses = map[string]struct {
+			Content map[string]struct{ Schema *schema }
+		}{code: {Content: map[string]struct{ Schema *schema }{
+			"application/json": {Schema: &schema{Ref: "#/components/schemas/" + ref}},
+		}}}
+
+		return o
+	}
+
+	for name, tc := range map[string]struct {
+		o    *operation
+		want string
+	}{
+		"top level, 201": {op("201", "Created"), "clientSecret"},
+		"top level, 200": {op("200", "Created"), "clientSecret"},
+		"error response": {op("400", "Created"), ""},
+		"nested only":    {op("201", "Nested"), ""},
+		"no response":    {&operation{}, ""},
+	} {
+		got, err := responseSecrets(s, tc.o)
+		if err != nil || strings.Join(got, ",") != tc.want {
+			t.Errorf("%s: %v, %v; want %q", name, got, err, tc.want)
+		}
+	}
+}

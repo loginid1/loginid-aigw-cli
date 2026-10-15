@@ -30,7 +30,13 @@ import (
 var tplText string
 
 // Flags every operation command defines itself; see internal/apicmd/engine.go.
-var reserved = []string{"api-key", "data", "output", "confirm", "help"}
+var reserved = []string{"api-key", "data", "output", "confirm", "secret-file", "help"}
+
+// secretFields are the response fields the API returns once and never again.
+// The spec marks clientSecret "Shown once" on ProjectProxyClientSecret and
+// "Returned once" on ResourceCreateResult. An operation whose success response
+// has one at its top level gets --secret-file and the stderr warning.
+var secretFields = []string{"clientSecret"}
 
 var methods = []string{"get", "post", "put", "patch", "delete"}
 
@@ -77,6 +83,9 @@ type operation struct {
 	RequiredScope string       `yaml:"x-required-scope"`
 	Parameters    []parameter  `yaml:"parameters"`
 	RequestBody   *requestBody `yaml:"requestBody"`
+	Responses     map[string]struct {
+		Content map[string]struct{ Schema *schema }
+	} `yaml:"responses"`
 }
 
 type parameter struct {
@@ -115,6 +124,7 @@ type outOp struct {
 	Args, Params                         []outParam
 	Fields                               []field
 	RequiredLists                        []string
+	SecretFields                         []string
 	HasBody                              bool
 }
 
@@ -351,7 +361,46 @@ func buildOp(s *spec, path, method string, o *operation, command string) (outOp,
 		slices.Sort(op.RequiredLists)
 	}
 
+	secrets, err := responseSecrets(s, o)
+	if err != nil {
+		return outOp{}, err
+	}
+
+	op.SecretFields = secrets
+
 	return op, nil
+}
+
+// responseSecrets returns the secretFields at the top level of o's 2xx JSON
+// responses, sorted.
+func responseSecrets(s *spec, o *operation) ([]string, error) {
+	var found []string
+
+	for code, resp := range o.Responses {
+		if !strings.HasPrefix(code, "2") {
+			continue
+		}
+
+		media, ok := resp.Content["application/json"]
+		if !ok || media.Schema == nil {
+			continue
+		}
+
+		body, err := resolve(s, media.Schema)
+		if err != nil {
+			return nil, fmt.Errorf("response %s: %w", code, err)
+		}
+
+		for _, name := range secretFields {
+			if body.Properties[name] != nil && !slices.Contains(found, name) {
+				found = append(found, name)
+			}
+		}
+	}
+
+	slices.Sort(found)
+
+	return found, nil
 }
 
 // walkBody flattens an object schema. Scalars and scalar lists become flags,

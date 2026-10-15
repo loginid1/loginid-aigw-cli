@@ -82,8 +82,12 @@ change it.
   `replace` or `set`, `get` or `list` the current state, tell the user what will change
   and what will be dropped, and wait for a clear yes.
 - **Secrets.** `resources create` and `projects proxy-clients create` can return a
-  `clientSecret` that the API never shows again. Tell the user to store it now. Do not
-  repeat it, write it to a file, or put it in a commit unless the user asks.
+  `clientSecret` that the API never shows again. Always pass `--secret-file <path>` to
+  them, so the secret goes to a new private file and never into this chat. Pick a path
+  the user agrees to, outside any git repository or covered by `.gitignore`; the file
+  must not exist yet. Then tell the user where the file is. Never read, print or copy
+  the file, and never put it in a commit. If a secret does appear in output anyway,
+  do not repeat it: tell the user to store it now.
 - **One change at a time.** After each change, read the result back (`get` or `list`)
   and tell the user what changed.
 

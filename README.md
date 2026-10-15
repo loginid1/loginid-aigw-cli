@@ -157,9 +157,15 @@ or JSON with `-o json`.
 A `delete`, `remove`, `revoke` or `clear` prints its own verb and the IDs it acted on,
 e.g. `{"deleted": true, "projectId": "…"}` or `{"revoked": true, ...}`.
 
-Some responses carry a secret the API never returns again, such as the `clientSecret`
-from `resources create` and `projects proxy-clients create`. `aigw` warns on stderr
-when one does. Store it at once.
+Some responses carry a secret the API never returns again: the `clientSecret` from
+`resources create` and `projects proxy-clients create`. `aigw` warns on stderr when
+one does. Store it at once. To keep it off the screen and out of logs, pass
+`--secret-file <path>`: the secret goes to that new file (mode `0600` on macOS and
+Linux), and the output says where it went instead.
+
+```sh
+aigw projects proxy-clients create --project-id <project-id> --secret-file ./proxy-secret
+```
 
 ### Deleting
 

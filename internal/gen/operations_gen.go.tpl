@@ -57,6 +57,9 @@ var Operations = []Operation{
 		{{- if .RequiredLists }}
 		RequiredLists: {{ qs .RequiredLists }},
 		{{- end }}
+		{{- if .SecretFields }}
+		SecretFields: {{ qs .SecretFields }},
+		{{- end }}
 	},
 {{- end }}
 }
