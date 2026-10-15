@@ -1,0 +1,41 @@
+# SPDX-FileCopyrightText:  Copyright © LoginID Inc.
+# SPDX-License-Identifier: Proprietary
+
+# Runs on the GitHub mirror, github.com/loginid1/loginid-aigw-cli, when GitLab's
+# mirror-sync job pushes a v* tag. It releases the tag on GitHub and updates the
+# Homebrew cask in github.com/loginid1/homebrew-tap. GitLab CI makes the GitLab
+# release from the same tag; see .goreleaser.yaml.
+#
+# Secret HOMEBREW_TAP_SSH_KEY: the private half of a write deploy key on
+# loginid1/homebrew-tap.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # create the release and upload its assets
+
+jobs:
+  goreleaser:
+    # Forks and copies of the mirror have no tap key.
+    if: ${{ github.repository == 'loginid1/loginid-aigw-cli' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # GoReleaser reads tags and the changelog from history
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          distribution: goreleaser
+          version: v2.18.2 # the same as the GitLab jobs
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_SSH_KEY: ${{ secrets.HOMEBREW_TAP_SSH_KEY }}
