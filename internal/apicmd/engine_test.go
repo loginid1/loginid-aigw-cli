@@ -568,3 +568,29 @@ func TestOneTimeSecretGetsAWarning(t *testing.T) {
 		}
 	}
 }
+
+// Each DELETE command reports its own verb. A new verb in the overlay must be
+// added to doneKeys rather than falling back to "ok" unnoticed.
+func TestDeleteResultUsesTheCommandsVerb(t *testing.T) {
+	t.Parallel()
+
+	for i := range apicmd.Operations {
+		op := &apicmd.Operations[i]
+		if op.Method == http.MethodDelete && apicmd.DoneKey(op) == "ok" {
+			t.Errorf("%s (%s) has no past tense in doneKeys", op.ID, strings.Join(op.Command, " "))
+		}
+	}
+
+	srv, _ := serve(t, http.StatusNoContent, "")
+
+	for args, want := range map[string]string{
+		"projects proxy-clients revoke pxc-1 --project-id p1":    "revoked",
+		"projects agent-policy clear --project-id p1":            "cleared",
+		"projects domain-rules remove d.example --project-id p1": "removed",
+	} {
+		out, err := runAigw(t, srv.URL, append(strings.Fields(args), "--confirm", apiKey, "k")...)
+		if err != nil || !strings.Contains(out, `"`+want+`": true`) || strings.Contains(out, "deleted") {
+			t.Errorf("%s: %v, output %q", args, err, out)
+		}
+	}
+}

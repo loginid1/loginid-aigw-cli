@@ -146,7 +146,8 @@ Commands print the API's JSON response on stdout, ready for `jq`. Warnings and
 prompts go to stderr, so stdout always stays JSON. `status` and `version` print text,
 or JSON with `-o json`.
 
-A delete prints `{"deleted": true, ...}` with the IDs of what it removed.
+A `delete`, `remove`, `revoke` or `clear` prints its own verb and the IDs it acted on,
+e.g. `{"deleted": true, "projectId": "…"}` or `{"revoked": true, ...}`.
 
 Some responses carry a secret the API never returns again, such as the `clientSecret`
 from `resources create` and `projects proxy-clients create`. `aigw` warns on stderr

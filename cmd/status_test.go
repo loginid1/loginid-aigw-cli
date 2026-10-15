@@ -2,10 +2,13 @@ package cmd_test
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"gitlab.com/loginid/software/loginid-aigw-cli.git/cmd"
 	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/apicmd"
@@ -124,5 +127,51 @@ func TestStatus(t *testing.T) {
 	_, err = run(t, "", "status", "--api-key", "aigw_sk_rejected1234")
 	if cmd.ExitCode(err) != apicmd.ExitNotAuthenticated {
 		t.Errorf("rejected key: exit %d, %v", cmd.ExitCode(err), err)
+	}
+}
+
+// Input that is not shaped like a key is saved unchecked: it may be another
+// secret pasted by mistake, and must not go over the network.
+func TestLoginNeverSendsSomethingThatIsNotAKey(t *testing.T) {
+	dir := isolate(t)
+
+	out, err := run(t, "ghp_somegithubtoken123", "login", "--with-key-stdin")
+	if err != nil || !strings.Contains(out, "saving it without checking") {
+		t.Fatalf("%v; output %q", err, out)
+	}
+
+	if got := fake.take(); len(got) != 0 {
+		t.Errorf("sent %v", got)
+	}
+
+	if got, _ := credentials.Load(dir, config.DefaultProfile); got != "ghp_somegithubtoken123" {
+		t.Errorf("saved key = %q", got)
+	}
+}
+
+// A network that never answers holds login only for the check's own timeout.
+func TestLoginCheckGivesUpQuickly(t *testing.T) {
+	isolate(t)
+
+	hang := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	t.Cleanup(hang.Close)
+
+	prev := apicmd.APIBase
+	apicmd.APIBase = hang.URL
+
+	t.Cleanup(func() { apicmd.APIBase = prev })
+	t.Cleanup(cmd.SetLoginCheckTimeout(200 * time.Millisecond))
+
+	start := time.Now()
+
+	out, err := run(t, "aigw_sk_slownetwork1", "login", "--with-key-stdin")
+	if err != nil || !strings.Contains(out, "could not check the key") {
+		t.Fatalf("%v; output %q", err, out)
+	}
+
+	if took := time.Since(start); took > 5*time.Second {
+		t.Errorf("login took %s", took)
 	}
 }

@@ -329,7 +329,7 @@ func run(cmd *cobra.Command, op *Operation, resolveTarget func() (Target, error)
 	// A delete answers 204 with no body. Say what went, so a script or an
 	// agent has something to read and a person sees it worked.
 	if op.Method == http.MethodDelete && len(bytes.TrimSpace(body)) == 0 {
-		body, err = deletedBody(req.PathParams)
+		body, err = doneBody(op, req.PathParams)
 		if err != nil {
 			return err
 		}
@@ -358,10 +358,31 @@ func warnOneTimeSecrets(w io.Writer, body []byte) {
 	}
 }
 
-// deletedBody is {"deleted": true} plus the path parameters that named what
-// was deleted, e.g. "projectId".
-func deletedBody(pathParams map[string]string) ([]byte, error) {
-	out := map[string]any{"deleted": true}
+// doneKeys maps the verb of each DELETE command to the key its result
+// reports, so `agent-policy clear` says "cleared", not "deleted".
+//
+//nolint:goconst // the verbs as the overlay spells them, which operations_gen.go repeats
+var doneKeys = map[string]string{
+	"delete": "deleted",
+	"remove": "removed",
+	"revoke": "revoked",
+	"clear":  "cleared",
+}
+
+// DoneKey is the key op's empty-body result reports: its verb in the past
+// tense, or "ok" for a verb doneKeys does not know.
+func DoneKey(op *Operation) string {
+	if key, ok := doneKeys[op.Command[len(op.Command)-1]]; ok {
+		return key
+	}
+
+	return "ok"
+}
+
+// doneBody is {"<DoneKey>": true} plus the path parameters that named what
+// went, e.g. {"deleted": true, "projectId": "…"}.
+func doneBody(op *Operation, pathParams map[string]string) ([]byte, error) {
+	out := map[string]any{DoneKey(op): true}
 	for k, v := range pathParams {
 		out[k] = v
 	}

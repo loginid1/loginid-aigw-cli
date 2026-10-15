@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -33,7 +35,9 @@ func newLoginCommand() *cobra.Command {
 			"If a key is already saved, login asks before replacing it. --confirm skips\n" +
 			"the question; without a terminal, --confirm is required.\n\n" +
 			"Before saving, login lists projects with the key. A key the API rejects is\n" +
-			"not saved. If the API cannot be reached, the key is saved with a warning.",
+			"not saved. If the API does not answer within 5 seconds, the key is saved with\n" +
+			"a warning. Input that does not start with aigw_sk_ is never sent: it is saved\n" +
+			"unchecked, with a warning, in case it is some other secret pasted by mistake.",
 		Example: "  aigw login\n" +
 			"  aigw login --with-key-stdin --confirm < key.txt",
 		Args: cobra.NoArgs,
@@ -64,15 +68,17 @@ func newLoginCommand() *cobra.Command {
 			}
 
 			if !credentials.LooksLikeKey(key) {
-				fmt.Fprintln(cmd.ErrOrStderr(), "warning: this does not look like a devcon API key (they start with aigw_sk_); saving it anyway")
-			}
-
-			// Check before saving, so a mistyped key is never stored. The
-			// key goes only to the real API, never to AIGW_TEMP_API_BASE,
-			// which a cloned repo's env could set to collect it.
-			err = checkNewKey(cmd, key)
-			if err != nil {
-				return err
+				// Not checked: it may be another secret pasted by mistake, and
+				// checking would send it over the network.
+				fmt.Fprintln(cmd.ErrOrStderr(), "warning: this does not look like a devcon API key (they start with aigw_sk_); saving it without checking")
+			} else {
+				// Check before saving, so a mistyped key is never stored. The
+				// key goes only to the real API, never to AIGW_TEMP_API_BASE,
+				// which a cloned repo's env could set to collect it.
+				err = checkNewKey(cmd, key)
+				if err != nil {
+					return err
+				}
 			}
 
 			where, err := credentials.Save(dir, config.DefaultProfile, key, insecure)
@@ -101,11 +107,18 @@ func newLoginCommand() *cobra.Command {
 	return cmd
 }
 
+// loginCheckTimeout bounds checkNewKey. The check is best effort, so a network
+// that silently drops traffic should not hold login for the client's full 30s.
+var loginCheckTimeout = 5 * time.Second
+
 // checkNewKey lists projects with key. A key the API rejects fails login with
-// exit 3. Any other failure, such as no network or a key without project:read,
-// only warns: the key may still be right.
+// exit 3. Any other failure, such as no network, a timeout or a key without
+// project:read, only warns: the key may still be right.
 func checkNewKey(cmd *cobra.Command, key string) error {
-	err := apicmd.ProbeKey(cmd.Context(), apicmd.APIBase, key)
+	ctx, cancel := context.WithTimeout(cmd.Context(), loginCheckTimeout)
+	defer cancel()
+
+	err := apicmd.ProbeKey(ctx, apicmd.APIBase, key)
 
 	var exitErr *apicmd.ExitError
 
