@@ -27,14 +27,23 @@ const Name = "aigw"
 
 // Render returns SKILL.md stamped with the aigw version that wrote it.
 func Render(version string) string {
-	return strings.ReplaceAll(template, "{{version}}", version)
+	return render(template, version)
+}
+
+// render normalizes line endings first: a Windows checkout with
+// core.autocrlf embeds SKILL.md with \r\n, and the frontmatter and marker
+// matching in body expects \n. .gitattributes keeps it LF too.
+func render(tmpl, version string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(tmpl, "\r\n", "\n"), "{{version}}", version)
 }
 
 // Body returns the skill without its frontmatter and the install note, for
 // another tool's instructions file (e.g. AGENTS.md), where neither applies.
 func Body(version string) string {
-	s := Render(version)
+	return body(Render(version))
+}
 
+func body(s string) string {
 	// The frontmatter is the block between the first two "---" lines.
 	if rest, ok := strings.CutPrefix(s, "---\n"); ok {
 		if _, after, found := strings.Cut(rest, "\n---\n"); found {

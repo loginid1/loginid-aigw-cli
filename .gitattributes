@@ -1,0 +1,5 @@
+# Files the binary embeds keep LF on every checkout. On Windows, Git's
+# core.autocrlf would otherwise check them out with CRLF, and go:embed would
+# build that into a local or CI binary (internal/skill parses SKILL.md).
+internal/skill/SKILL.md text eol=lf
+internal/gen/operations_gen.go.tpl text eol=lf
