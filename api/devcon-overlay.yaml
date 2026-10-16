@@ -8,6 +8,11 @@
 #
 # Naming: PATCH is `update`, because a partial change is what people usually
 # want. PUT, a full replace, is `replace`.
+
+# The production API. It replaces the spec's servers entry, which still names
+# https://aigw.loginid.io. Remove this once the spec names the real host.
+server: https://api.aigw.loginid.ai
+
 operations:
   projects#list:                       { command: projects list }
   projects#create:                     { command: projects create }

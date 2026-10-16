@@ -7,8 +7,8 @@ package apicmd
 // SpecRef is the loginid-aigw commit or tag these operations were read from.
 const SpecRef = "fb6671b568204343b6451968f9003f535b37532d"
 
-// DefaultAPIBase is the spec's first server URL.
-const DefaultAPIBase = "https://aigw.loginid.io"
+// DefaultAPIBase is the overlay's server, else the spec's first server URL.
+const DefaultAPIBase = "https://api.aigw.loginid.ai"
 
 // Operations lists every command internal/gen produced, sorted by command path.
 var Operations = []Operation{
