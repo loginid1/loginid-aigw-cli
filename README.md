@@ -106,7 +106,7 @@ To check what `aigw` will use:
 
 ```console
 $ aigw status
-API:    https://aigw.loginid.io
+API:    https://api.aigw.loginid.ai
 Key:    aigw_sk_…X7kQ (saved login)
 Check:  ok (118 ms)
 ```

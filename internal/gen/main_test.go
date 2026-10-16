@@ -150,3 +150,29 @@ func TestResponseSecretsFindsTopLevelSecretFields(t *testing.T) {
 		}
 	}
 }
+
+func TestAPIBasePrefersTheOverlay(t *testing.T) {
+	t.Parallel()
+
+	s := &spec{Servers: []struct{ URL string }{{URL: "https://from-spec.example"}}}
+
+	for name, tc := range map[string]struct {
+		s      *spec
+		server string
+		want   string
+		ok     bool
+	}{
+		"spec only":    {s, "", "https://from-spec.example", true},
+		"overlay wins": {s, "https://api.example/", "https://api.example", true},
+		"neither":      {&spec{}, "", "", false},
+		"plain http":   {s, "http://api.example", "", false},
+		"a path":       {s, "https://api.example/v1", "", false},
+		"no host":      {s, "https://", "", false},
+		"query":        {s, "https://api.example?x=1", "", false},
+	} {
+		got, err := apiBase(tc.s, &overlay{Server: tc.server})
+		if (err == nil) != tc.ok || got != tc.want {
+			t.Errorf("%s: %q, %v", name, got, err)
+		}
+	}
+}

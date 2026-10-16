@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"go/format"
 	"log"
+	"net/url"
 	"os"
 	"slices"
 	"strings"
@@ -111,6 +112,9 @@ type schema struct {
 }
 
 type overlay struct {
+	// Server, when set, replaces the spec's first servers entry as the API
+	// base the CLI calls.
+	Server     string
 	Operations map[string]struct {
 		Command string
 	}
@@ -150,6 +154,26 @@ type field struct {
 	Enum       []string
 }
 
+// apiBase is the overlay's server, else the spec's first servers entry. It
+// must be an https URL with a host and no path, query or fragment.
+func apiBase(s *spec, ov *overlay) (string, error) {
+	base := ov.Server
+	if base == "" {
+		if len(s.Servers) == 0 {
+			return "", errors.New("spec has no servers entry, and the overlay sets no server")
+		}
+
+		base = s.Servers[0].URL
+	}
+
+	u, err := url.Parse(base)
+	if err != nil || u.Scheme != "https" || u.Host == "" || strings.Trim(u.Path, "/") != "" || u.RawQuery != "" || u.Fragment != "" {
+		return "", fmt.Errorf("API base %q: want https://host with no path", base)
+	}
+
+	return strings.TrimSuffix(base, "/"), nil
+}
+
 func generate(specPath, overlayPath, ref string) ([]byte, error) {
 	var (
 		s  spec
@@ -161,8 +185,9 @@ func generate(specPath, overlayPath, ref string) ([]byte, error) {
 		return nil, err
 	}
 
-	if len(s.Servers) == 0 {
-		return nil, errors.New("spec has no servers entry")
+	base, err := apiBase(&s, &ov)
+	if err != nil {
+		return nil, err
 	}
 
 	var (
@@ -231,7 +256,7 @@ func generate(specPath, overlayPath, ref string) ([]byte, error) {
 
 	var buf bytes.Buffer
 
-	err1 := tpl.Execute(&buf, map[string]any{"Ref": ref, "Base": s.Servers[0].URL, "Ops": ops})
+	err1 := tpl.Execute(&buf, map[string]any{"Ref": ref, "Base": base, "Ops": ops})
 	if err1 != nil {
 		return nil, err1
 	}
