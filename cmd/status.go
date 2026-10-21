@@ -25,7 +25,6 @@ const (
 // scripts and agents: add fields, do not rename them.
 type statusReport struct {
 	APIBase   string `json:"apiBase"`
-	Temporary bool   `json:"temporary,omitempty"`
 	KeyHint   string `json:"keyHint,omitempty"`
 	KeySource string `json:"keySource,omitempty"`
 	Check     string `json:"check"`
@@ -51,16 +50,9 @@ func newStatusCommand() *cobra.Command {
 				return fmt.Errorf("unsupported output format %q: use text or json", output)
 			}
 
-			target, err := apicmd.ResolveTarget()
-			if err != nil {
-				return err
-			}
+			report, result := checkStatus(cmd, apiKey)
 
-			target.Warn(cmd.ErrOrStderr())
-
-			report, result := checkStatus(cmd, target, apiKey)
-
-			err = printStatus(cmd.OutOrStdout(), output, &report)
+			err := printStatus(cmd.OutOrStdout(), output, &report)
 			if err != nil {
 				return err
 			}
@@ -76,13 +68,13 @@ func newStatusCommand() *cobra.Command {
 }
 
 // checkStatus fills the report and returns the error that sets the exit code.
-func checkStatus(cmd *cobra.Command, target apicmd.Target, flagKey string) (statusReport, error) {
-	report := statusReport{APIBase: target.BaseURL, Temporary: target.Temporary}
+func checkStatus(cmd *cobra.Command, flagKey string) (statusReport, error) {
+	report := statusReport{APIBase: apicmd.APIBase}
 
-	key, err := client.ResolveAPIKey(flagKey, target.Temporary)
+	key, err := client.ResolveAPIKey(flagKey)
 	if errors.Is(err, client.ErrNotLoggedIn) {
 		report.Check = checkNotLoggedIn
-		err = apicmd.NotLoggedIn(target)
+		err = apicmd.ExitErrorFor(err)
 		report.Error = err.Error()
 
 		return report, err
@@ -105,7 +97,7 @@ func checkStatus(cmd *cobra.Command, target apicmd.Target, flagKey string) (stat
 	report.KeySource = key.Source
 
 	start := time.Now()
-	err = apicmd.ProbeKey(cmd.Context(), target.BaseURL, key.Value)
+	err = apicmd.ProbeKey(cmd.Context(), apicmd.APIBase, key.Value)
 	report.LatencyMS = time.Since(start).Milliseconds()
 
 	if err != nil {
@@ -128,11 +120,6 @@ func printStatus(w io.Writer, output string, r *statusReport) error {
 		return enc.Encode(r)
 	}
 
-	api := r.APIBase
-	if r.Temporary {
-		api += " (from AIGW_TEMP_API_BASE)"
-	}
-
 	key := "none"
 	if r.KeyHint != "" {
 		key = r.KeyHint + " (" + r.KeySource + ")"
@@ -143,7 +130,7 @@ func printStatus(w io.Writer, output string, r *statusReport) error {
 		check = fmt.Sprintf("ok (%d ms)", r.LatencyMS)
 	}
 
-	_, err := fmt.Fprintf(w, "API:    %s\nKey:    %s\nCheck:  %s\n", api, key, check)
+	_, err := fmt.Fprintf(w, "API:    %s\nKey:    %s\nCheck:  %s\n", r.APIBase, key, check)
 
 	return err
 }

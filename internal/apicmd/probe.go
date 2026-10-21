@@ -8,8 +8,10 @@ import (
 	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/client"
 )
 
-// APIBase is where requests go unless AIGW_TEMP_API_BASE is set. It is
-// DefaultAPIBase; tests replace it to point at a fake server.
+// APIBase is where requests go. It is DefaultAPIBase unless the build sets it
+// with -ldflags -X, e.g. `make build API_BASE=...` for another environment. It
+// is never read from a flag or the environment: a key sent to a URL a cloned
+// repo's env chose would leak. Tests replace it to point at a fake server.
 var APIBase = DefaultAPIBase
 
 // probeOperation is the call ProbeKey makes. It needs only project:read.

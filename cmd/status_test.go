@@ -24,7 +24,7 @@ func isolate(t *testing.T) string {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
-	for _, v := range []string{"AIGW_API_KEY", "AIGW_TEMP_API_KEY", "AIGW_TEMP_API_BASE"} {
+	for _, v := range []string{"AIGW_API_KEY"} {
 		t.Setenv(v, "")
 	}
 
@@ -48,19 +48,26 @@ func TestLoginRefusesARejectedKey(t *testing.T) {
 	}
 }
 
-// login checks the key on the real API, never on AIGW_TEMP_API_BASE, which a
-// cloned repo's env could set to collect it.
-func TestLoginNeverSendsTheKeyToTheTemporaryBase(t *testing.T) {
+// The removed AIGW_TEMP_API_BASE must not come back in any form: a cloned
+// repo's env could set it to collect the key.
+func TestEnvCannotRedirectTheKey(t *testing.T) {
 	isolate(t)
 	t.Setenv("AIGW_TEMP_API_BASE", "https://127.0.0.1:1")
+	t.Setenv("AIGW_TEMP_API_KEY", "aigw_sk_tempkey12345")
 
 	out, err := run(t, "aigw_sk_secretkey123", "login", "--with-key-stdin")
 	if err != nil || !strings.Contains(out, "The key works") {
 		t.Fatalf("%v; output %q", err, out)
 	}
 
-	if got := fake.take(); !slices.Equal(got, []string{"Bearer aigw_sk_secretkey123"}) {
-		t.Errorf("sent %v", got)
+	_, err = run(t, "", "projects", "list")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []string{"Bearer aigw_sk_secretkey123", "Bearer aigw_sk_secretkey123"}
+	if got := fake.take(); !slices.Equal(got, want) {
+		t.Errorf("sent %v, want %v", got, want)
 	}
 }
 

@@ -72,9 +72,7 @@ func newLoginCommand() *cobra.Command {
 				// checking would send it over the network.
 				fmt.Fprintln(cmd.ErrOrStderr(), "warning: this does not look like a devcon API key (they start with aigw_sk_); saving it without checking")
 			} else {
-				// Check before saving, so a mistyped key is never stored. The
-				// key goes only to the real API, never to AIGW_TEMP_API_BASE,
-				// which a cloned repo's env could set to collect it.
+				// Check before saving, so a mistyped key is never stored.
 				err = checkNewKey(cmd, key)
 				if err != nil {
 					return err
