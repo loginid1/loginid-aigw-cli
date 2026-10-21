@@ -26,13 +26,8 @@ import (
 	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/credentials"
 )
 
-// Env vars that supply a key without `aigw login`.
-const (
-	// EnvAPIKey is used for the real API.
-	EnvAPIKey = "AIGW_API_KEY" //nolint:gosec // the name of an env var, not a credential
-	// EnvTempAPIKey is the only env var used when the base URL is overridden.
-	EnvTempAPIKey = "AIGW_TEMP_API_KEY" //nolint:gosec // the name of an env var, not a credential
-)
+// EnvAPIKey is the env var that supplies a key without `aigw login`.
+const EnvAPIKey = "AIGW_API_KEY" //nolint:gosec // the name of an env var, not a credential
 
 const (
 	requestTimeout   = 30 * time.Second
@@ -110,25 +105,13 @@ type APIKey struct {
 	Source string
 }
 
-// ResolveAPIKey returns explicit when set. Otherwise, for the real API, it
-// returns $AIGW_API_KEY, else the key `aigw login` saved; for a temporary base
-// URL, only $AIGW_TEMP_API_KEY, so neither of the real keys can be sent there.
-// It returns ErrNotLoggedIn when there is none.
-func ResolveAPIKey(explicit string, temporaryBase bool) (APIKey, error) {
+// ResolveAPIKey returns explicit when set, else $AIGW_API_KEY, else the key
+// `aigw login` saved for profile. It returns ErrNotLoggedIn when there is none.
+func ResolveAPIKey(explicit, profile string) (APIKey, error) {
 	if explicit != "" {
 		key, err := checked(explicit, SourceFlag)
 
 		return APIKey{key, SourceFlag}, err
-	}
-
-	if temporaryBase {
-		if v := os.Getenv(EnvTempAPIKey); v != "" {
-			key, err := checked(v, EnvTempAPIKey)
-
-			return APIKey{key, EnvTempAPIKey}, err
-		}
-
-		return APIKey{}, ErrNotLoggedIn
 	}
 
 	if v := os.Getenv(EnvAPIKey); v != "" {
@@ -142,7 +125,7 @@ func ResolveAPIKey(explicit string, temporaryBase bool) (APIKey, error) {
 		return APIKey{}, err
 	}
 
-	key, err := credentials.Load(dir, config.DefaultProfile)
+	key, err := credentials.Load(dir, profile)
 	if errors.Is(err, credentials.ErrNotLoggedIn) {
 		return APIKey{}, ErrNotLoggedIn
 	}
@@ -184,7 +167,6 @@ func (c *Client) Do(ctx context.Context, req *Request) ([]byte, error) {
 		body = bytes.NewReader(raw)
 	}
 
-	// TEMP: c.BaseURL can come from AIGW_TEMP_API_BASE; see apicmd.AddAll.
 	httpReq, err := http.NewRequestWithContext(ctx, req.Method, u, body)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
@@ -315,8 +297,8 @@ func checkPathValue(v string) error {
 // to fix the order addresses come back in.
 var lookupIPAddr = net.DefaultResolver.LookupIPAddr
 
-// loopbackOnlyTransport is for plain-http bases, which only a temporary
-// override can set. It dials only loopback addresses, whatever a hostname
+// loopbackOnlyTransport is for plain-http bases, which only a local build can
+// set. It dials only loopback addresses, whatever a hostname
 // resolves to, so a DNS answer cannot carry the key off the machine in clear
 // text, and it uses no proxy.
 func loopbackOnlyTransport() *http.Transport {

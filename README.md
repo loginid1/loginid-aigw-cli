@@ -245,6 +245,7 @@ Requires Go (the version is in `mise.toml`) and GNU Make.
 
 ```sh
 make build        # ./aigw for this machine
+make build API_BASE=https://api.aigw.eval.loginid.ai  # ./aigw for eval, with its own saved key
 make test         # unit tests
 make lint         # golangci-lint, installed into build/ on first run
 make all          # lint, test and build

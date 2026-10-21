@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/client"
+	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/config"
 )
 
 func TestDoSendsRequest(t *testing.T) {
@@ -263,19 +264,19 @@ func TestPlainHTTPUsesNoProxy(t *testing.T) {
 func TestKeysFromEnvAndFlagsAreCleaned(t *testing.T) {
 	t.Setenv("AIGW_API_KEY", "aigw_sk_abc\r\n") // read from a Windows file
 
-	got, err := client.ResolveAPIKey("", false)
+	got, err := client.ResolveAPIKey("", config.DefaultProfile)
 	if err != nil || got.Value != "aigw_sk_abc" || got.Source != "AIGW_API_KEY" {
 		t.Errorf("trailing CRLF: %+v, %v", got, err)
 	}
 
 	t.Setenv("AIGW_API_KEY", "aigw_sk_a b")
 
-	_, err = client.ResolveAPIKey("", false)
+	_, err = client.ResolveAPIKey("", config.DefaultProfile)
 	if !errors.Is(err, client.ErrBadKey) || !strings.Contains(err.Error(), "AIGW_API_KEY") {
 		t.Errorf("a key with a space: %v", err)
 	}
 
-	_, err = client.ResolveAPIKey("aigw_sk_\x01", false)
+	_, err = client.ResolveAPIKey("aigw_sk_\x01", config.DefaultProfile)
 	if !errors.Is(err, client.ErrBadKey) || !strings.Contains(err.Error(), "--api-key") {
 		t.Errorf("a flag key with a control character: %v", err)
 	}

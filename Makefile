@@ -6,6 +6,10 @@ export EXE_NAME?=aigw
 GOOS?=$(shell go env GOOS)
 GOARCH?=$(shell go env GOARCH)
 host := GOOS= GOARCH=
+# Points a local build at another environment, e.g.
+#   make build API_BASE=https://api.aigw.eval.loginid.ai
+# Empty means the spec's server. Release builds never set it.
+API_BASE?=
 
 export GOLINT_VER?=2.12.2
 # Built with `go install` at a pinned version, so the Go checksum database
@@ -42,7 +46,8 @@ build:
 	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) \
 	go build -o $(EXE_NAME) -trimpath --ldflags "-s -w \
 	-X $(module)/internal/version.Version=$(PKG_VERSION) \
-	-X $(module)/internal/version.GitCommit=$(commit)" .
+	-X $(module)/internal/version.GitCommit=$(commit) \
+	$(if $(API_BASE),-X $(module)/internal/apicmd.APIBase=$(API_BASE))" .
 
 lint_prep:
 	@if [ ! -x $(golint_exe) ]; then \

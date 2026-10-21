@@ -9,7 +9,7 @@ import (
 	"github.com/zalando/go-keyring"
 
 	"gitlab.com/loginid/software/loginid-aigw-cli.git/cmd"
-	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/config"
+	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/apicmd"
 	"gitlab.com/loginid/software/loginid-aigw-cli.git/internal/credentials"
 )
 
@@ -51,7 +51,7 @@ func TestLoginLogout(t *testing.T) {
 		t.Errorf("login output lacks the key hint: %q", out)
 	}
 
-	got, err := credentials.Load(dir+"/aigw", config.DefaultProfile)
+	got, err := credentials.Load(dir+"/aigw", apicmd.Profile())
 	if err != nil || got != key {
 		t.Fatalf("saved key = %q, %v", got, err)
 	}
@@ -61,7 +61,7 @@ func TestLoginLogout(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = credentials.Load(dir+"/aigw", config.DefaultProfile)
+	_, err = credentials.Load(dir+"/aigw", apicmd.Profile())
 	if err == nil {
 		t.Error("key still saved after logout")
 	}
@@ -101,7 +101,7 @@ func TestLoginRejectsBadInput(t *testing.T) {
 		t.Errorf("an oversized key: %v", err)
 	}
 
-	if got, _ := credentials.Load(os.Getenv("XDG_CONFIG_HOME")+"/aigw", config.DefaultProfile); got != "" {
+	if got, _ := credentials.Load(os.Getenv("XDG_CONFIG_HOME")+"/aigw", apicmd.Profile()); got != "" {
 		t.Errorf("an oversized key was saved: %d bytes", len(got))
 	}
 }
@@ -128,7 +128,7 @@ func TestLoginAgainNeedsConfirm(t *testing.T) {
 		t.Fatalf("want a --confirm error, got %v", err)
 	}
 
-	got, _ := credentials.Load(dir+"/aigw", config.DefaultProfile)
+	got, _ := credentials.Load(dir+"/aigw", apicmd.Profile())
 	if got != oldKey {
 		t.Fatalf("saved key changed without --confirm: %q", got)
 	}
@@ -142,7 +142,7 @@ func TestLoginAgainNeedsConfirm(t *testing.T) {
 		t.Errorf("output = %q", out)
 	}
 
-	got, _ = credentials.Load(dir+"/aigw", config.DefaultProfile)
+	got, _ = credentials.Load(dir+"/aigw", apicmd.Profile())
 	if got != newKey {
 		t.Errorf("saved key = %q, want the new one", got)
 	}

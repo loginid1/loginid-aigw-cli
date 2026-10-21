@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -29,84 +28,20 @@ const (
 	flagData    = "data"
 	flagOutput  = "output"
 	flagConfirm = "confirm"
-
-	// TEMP: see AddAll.
-	envTempAPIBase = "AIGW_TEMP_API_BASE"
 )
 
 // AddAll registers every generated operation under root, building the noun
-// commands the operations' paths name along the way. Where requests go is
-// decided when one runs, so `--help` neither warns nor fails over it.
+// commands the operations' paths name along the way. APIBase is read when one
+// runs, so a test can swap it after AddAll.
 func AddAll(root *cobra.Command) {
-	addAll(root, ResolveTarget)
+	addAll(root, func() string { return APIBase })
 }
 
-func addAll(root *cobra.Command, target func() (Target, error)) {
+func addAll(root *cobra.Command, base func() string) {
 	for i := range Operations {
 		op := &Operations[i]
 		parent := ensureGroups(root, op.Command[:len(op.Command)-1])
-		parent.AddCommand(newOperationCommand(op, target))
-	}
-}
-
-// Target is where API requests go.
-type Target struct {
-	BaseURL string
-	// Temporary is true when AIGW_TEMP_API_BASE chose BaseURL. The key then
-	// comes only from --api-key or AIGW_TEMP_API_KEY: never the saved login
-	// and never AIGW_API_KEY, so a variable set by a cloned repo's .mcp.json
-	// or .envrc cannot collect a key it does not already know.
-	Temporary bool
-}
-
-// ResolveTarget returns APIBase, the spec's server. It is not a flag:
-// a key sent to a URL the user typed would leak.
-//
-// TEMP: envTempAPIBase overrides it, for testing against local and staging
-// servers until there is a proper answer for those. It is left out of all help
-// text on purpose; it must be https, or http on localhost or a loopback IP;
-// and every run that uses it says so on stderr. Remove it once that answer
-// exists.
-func ResolveTarget() (Target, error) {
-	override := os.Getenv(envTempAPIBase)
-	if override == "" {
-		return Target{BaseURL: APIBase}, nil
-	}
-
-	u, err := url.Parse(override)
-	// No query or fragment: the API path is appended to the base as a string,
-	// and would land inside them, so every call would hit the same URL.
-	if err != nil || u.Host == "" || u.User != nil || u.Opaque != "" ||
-		u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(override, "#") {
-		return Target{}, fmt.Errorf("%s=%q is not a usable base URL", envTempAPIBase, override)
-	}
-
-	if u.Scheme != "https" && (u.Scheme != "http" || !isLoopback(u.Hostname())) {
-		return Target{}, fmt.Errorf("%s must be https, or http on localhost; got %q", envTempAPIBase, override)
-	}
-
-	return Target{BaseURL: override, Temporary: true}, nil
-}
-
-// isLoopback accepts "localhost" and loopback IPs. Not "*.localhost": Go
-// resolves those through DNS, which a hostile network answers. For plain http
-// the client also refuses to dial anything that does not resolve to loopback.
-func isLoopback(host string) bool {
-	if host == "localhost" {
-		return true
-	}
-
-	ip := net.ParseIP(host)
-
-	return ip != nil && ip.IsLoopback()
-}
-
-// Warn says on w that requests go to a temporary base URL. Each run resolves
-// the target once, so this prints once.
-func (t Target) Warn(w io.Writer) {
-	if t.Temporary {
-		fmt.Fprintf(w, "warning: %s is set; API requests go to %s with the key from --%s or %s\n",
-			envTempAPIBase, t.BaseURL, flagAPIKey, client.EnvTempAPIKey)
+		parent.AddCommand(newOperationCommand(op, base))
 	}
 }
 
@@ -168,7 +103,7 @@ func findChild(cmd *cobra.Command, name string) *cobra.Command {
 	return nil
 }
 
-func newOperationCommand(op *Operation, target func() (Target, error)) *cobra.Command {
+func newOperationCommand(op *Operation, base func() string) *cobra.Command {
 	var use strings.Builder
 
 	use.WriteString(op.Command[len(op.Command)-1])
@@ -193,7 +128,7 @@ func newOperationCommand(op *Operation, target func() (Target, error)) *cobra.Co
 		Example: requiredExample(op),
 		Args:    cobra.ExactArgs(len(op.Args)),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return run(cmd, op, target, args)
+			return run(cmd, op, base, args)
 		},
 	}
 
@@ -250,25 +185,14 @@ func newOperationCommand(op *Operation, target func() (Target, error)) *cobra.Co
 	return cmd
 }
 
-func run(cmd *cobra.Command, op *Operation, resolveTarget func() (Target, error), args []string) error {
+func run(cmd *cobra.Command, op *Operation, base func() string, args []string) error {
 	if out, _ := cmd.Flags().GetString(flagOutput); out != "json" {
 		return fmt.Errorf("unsupported output format %q: only json is supported", out)
 	}
 
-	target, err := resolveTarget()
-	if err != nil {
-		return err
-	}
-
-	target.Warn(cmd.ErrOrStderr())
-
 	flagKey, _ := cmd.Flags().GetString(flagAPIKey)
 
-	apiKey, err := client.ResolveAPIKey(flagKey, target.Temporary)
-	if errors.Is(err, client.ErrNotLoggedIn) {
-		return NotLoggedIn(target)
-	}
-
+	apiKey, err := client.ResolveAPIKey(flagKey, Profile())
 	if err != nil {
 		mapped := ExitErrorFor(err)
 
@@ -314,7 +238,7 @@ func run(cmd *cobra.Command, op *Operation, resolveTarget func() (Target, error)
 		}
 	}
 
-	c := client.New(target.BaseURL, apiKey.Value)
+	c := client.New(base(), apiKey.Value)
 
 	if op.Method == http.MethodDelete {
 		err = confirmDelete(cmd, op, args, c, req)
