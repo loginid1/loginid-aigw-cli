@@ -106,8 +106,8 @@ type APIKey struct {
 }
 
 // ResolveAPIKey returns explicit when set, else $AIGW_API_KEY, else the key
-// `aigw login` saved. It returns ErrNotLoggedIn when there is none.
-func ResolveAPIKey(explicit string) (APIKey, error) {
+// `aigw login` saved for profile. It returns ErrNotLoggedIn when there is none.
+func ResolveAPIKey(explicit, profile string) (APIKey, error) {
 	if explicit != "" {
 		key, err := checked(explicit, SourceFlag)
 
@@ -125,7 +125,7 @@ func ResolveAPIKey(explicit string) (APIKey, error) {
 		return APIKey{}, err
 	}
 
-	key, err := credentials.Load(dir, config.DefaultProfile)
+	key, err := credentials.Load(dir, profile)
 	if errors.Is(err, credentials.ErrNotLoggedIn) {
 		return APIKey{}, ErrNotLoggedIn
 	}

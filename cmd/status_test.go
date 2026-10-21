@@ -42,7 +42,7 @@ func TestLoginRefusesARejectedKey(t *testing.T) {
 		t.Fatalf("exit %d, %v; output %q", cmd.ExitCode(err), err, out)
 	}
 
-	_, err = credentials.Load(dir, config.DefaultProfile)
+	_, err = credentials.Load(dir, apicmd.Profile())
 	if err == nil {
 		t.Error("a rejected key was saved")
 	}
@@ -71,6 +71,49 @@ func TestEnvCannotRedirectTheKey(t *testing.T) {
 	}
 }
 
+// A build for another environment keeps its own key: its login leaves the
+// production key alone, and its commands never send it.
+func TestOtherBaseKeepsItsOwnKey(t *testing.T) {
+	dir := isolate(t)
+
+	_, err := credentials.Save(dir, config.DefaultProfile, "aigw_sk_prodkey12345", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if apicmd.Profile() != apicmd.APIBase {
+		t.Fatalf("profile for %s = %q", apicmd.APIBase, apicmd.Profile())
+	}
+
+	_, err = run(t, "aigw_sk_evalkey12345", "login", "--with-key-stdin")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = run(t, "", "projects", "list")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []string{"Bearer aigw_sk_evalkey12345", "Bearer aigw_sk_evalkey12345"}
+	if got := fake.take(); !slices.Equal(got, want) {
+		t.Errorf("sent %v, want %v", got, want)
+	}
+
+	if got, _ := credentials.Load(dir, config.DefaultProfile); got != "aigw_sk_prodkey12345" {
+		t.Errorf("production key = %q", got)
+	}
+
+	prev := apicmd.APIBase
+	apicmd.APIBase = apicmd.DefaultAPIBase
+
+	t.Cleanup(func() { apicmd.APIBase = prev })
+
+	if apicmd.Profile() != config.DefaultProfile {
+		t.Errorf("profile for the production build = %q", apicmd.Profile())
+	}
+}
+
 func TestLoginSavesWhenTheAPIIsUnreachable(t *testing.T) {
 	dir := isolate(t)
 
@@ -84,7 +127,7 @@ func TestLoginSavesWhenTheAPIIsUnreachable(t *testing.T) {
 		t.Fatalf("%v; output %q", err, out)
 	}
 
-	if got, _ := credentials.Load(dir, config.DefaultProfile); got != "aigw_sk_offline12345" {
+	if got, _ := credentials.Load(dir, apicmd.Profile()); got != "aigw_sk_offline12345" {
 		t.Errorf("saved key = %q", got)
 	}
 }
@@ -151,7 +194,7 @@ func TestLoginNeverSendsSomethingThatIsNotAKey(t *testing.T) {
 		t.Errorf("sent %v", got)
 	}
 
-	if got, _ := credentials.Load(dir, config.DefaultProfile); got != "ghp_somegithubtoken123" {
+	if got, _ := credentials.Load(dir, apicmd.Profile()); got != "ghp_somegithubtoken123" {
 		t.Errorf("saved key = %q", got)
 	}
 }

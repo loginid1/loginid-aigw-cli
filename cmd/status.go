@@ -71,7 +71,7 @@ func newStatusCommand() *cobra.Command {
 func checkStatus(cmd *cobra.Command, flagKey string) (statusReport, error) {
 	report := statusReport{APIBase: apicmd.APIBase}
 
-	key, err := client.ResolveAPIKey(flagKey)
+	key, err := client.ResolveAPIKey(flagKey, apicmd.Profile())
 	if errors.Is(err, client.ErrNotLoggedIn) {
 		report.Check = checkNotLoggedIn
 		err = apicmd.ExitErrorFor(err)

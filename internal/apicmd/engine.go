@@ -192,7 +192,7 @@ func run(cmd *cobra.Command, op *Operation, base func() string, args []string) e
 
 	flagKey, _ := cmd.Flags().GetString(flagAPIKey)
 
-	apiKey, err := client.ResolveAPIKey(flagKey)
+	apiKey, err := client.ResolveAPIKey(flagKey, Profile())
 	if err != nil {
 		mapped := ExitErrorFor(err)
 
