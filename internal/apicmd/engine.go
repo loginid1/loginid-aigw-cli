@@ -140,7 +140,10 @@ func newOperationCommand(op *Operation, base func() string) *cobra.Command {
 			desc += " (one of: " + enumList(p.Enum) + ")"
 		}
 
-		if p.Required {
+		switch {
+		case isVersionInput(&p):
+			desc = expectedFlagHelp
+		case p.Required:
 			desc += " (required)"
 		}
 
@@ -231,14 +234,21 @@ func run(cmd *cobra.Command, op *Operation, base func() string, args []string) e
 		}
 	}
 
+	c := client.New(base(), apiKey.Value)
+
 	if op.HasBody {
-		req.Body, err = buildBody(cmd, op)
+		body, bodyErr := buildBody(cmd, op)
+		if bodyErr != nil {
+			return bodyErr
+		}
+
+		err = fillVersions(cmd.Context(), op, c, req, body)
 		if err != nil {
 			return err
 		}
-	}
 
-	c := client.New(base(), apiKey.Value)
+		req.Body = body
+	}
 
 	if op.Method == http.MethodDelete {
 		err = confirmDelete(cmd, op, args, c, req)
@@ -334,7 +344,11 @@ func doneBody(op *Operation, pathParams map[string]string) ([]byte, error) {
 // required only inside an optional object are not listed; the server reports
 // those.
 func requiredExample(op *Operation) string {
-	if len(op.Args) == 0 && len(op.RequiredLists) == 0 && !slices.ContainsFunc(op.Params, func(p Param) bool { return p.Required }) {
+	// The versions are required by the API but filled in by the CLI.
+	required := func(p Param) bool { return p.Required && !isVersionInput(&p) }
+	lists := slices.DeleteFunc(slices.Clone(op.RequiredLists), func(l string) bool { return l == versionsField })
+
+	if len(op.Args) == 0 && len(lists) == 0 && !slices.ContainsFunc(op.Params, required) {
 		return ""
 	}
 
@@ -348,7 +362,7 @@ func requiredExample(op *Operation) string {
 	}
 
 	for _, p := range op.Params {
-		if !p.Required {
+		if !required(p) {
 			continue
 		}
 
@@ -363,7 +377,7 @@ func requiredExample(op *Operation) string {
 		}
 	}
 
-	for _, list := range op.RequiredLists {
+	for _, list := range lists {
 		if field := firstField(op, list+"[]."); field != "" {
 			b.WriteString(` -d "` + bracketKey(field) + "=" + exampleValue(op, field) + `"`)
 		}
@@ -559,19 +573,7 @@ func DeletePrompt(ctx context.Context, op *Operation, target string, c *client.C
 // same path, and returns its name. Any failure returns "": the prompt is still
 // right without a name, and the delete reports its own errors.
 func lookupName(ctx context.Context, del *Operation, c *client.Client, req *client.Request) string {
-	i := slices.IndexFunc(Operations, func(op Operation) bool {
-		return op.Method == http.MethodGet && op.Path == del.Path
-	})
-	if i < 0 {
-		return ""
-	}
-
-	body, err := c.Do(ctx, &client.Request{
-		Method:     http.MethodGet,
-		Path:       Operations[i].Path,
-		PathParams: req.PathParams,
-		Scope:      Operations[i].Scope,
-	})
+	body, err := getSamePath(ctx, del, c, req)
 	if err != nil {
 		return ""
 	}
