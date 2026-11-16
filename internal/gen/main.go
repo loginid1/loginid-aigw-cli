@@ -109,6 +109,11 @@ type schema struct {
 	Required    []string
 	Properties  map[string]*schema
 	Items       *schema
+	// Read only so an untyped schema that is really a composition is refused,
+	// not taken for a scalar.
+	OneOf []*schema `yaml:"oneOf"`
+	AnyOf []*schema `yaml:"anyOf"`
+	AllOf []*schema `yaml:"allOf"`
 }
 
 type overlay struct {
@@ -117,6 +122,9 @@ type overlay struct {
 	Server     string
 	Operations map[string]struct {
 		Command string
+		// Skip leaves an operation out of the CLI on purpose. The entry
+		// still has to match an operation in the spec.
+		Skip bool
 	}
 }
 
@@ -219,6 +227,10 @@ func generate(specPath, overlayPath, ref string) ([]byte, error) {
 			}
 
 			seen[o.OperationID] = true
+
+			if entry.Skip {
+				continue
+			}
 
 			if prev, dup := cmds[entry.Command]; dup {
 				errs = append(errs, fmt.Errorf("command %q is used by both %q and %q", entry.Command, prev, o.OperationID))
@@ -563,6 +575,13 @@ func resolve(s *spec, sc *schema) (*schema, error) {
 
 	if sc == nil {
 		return nil, errors.New("missing schema")
+	}
+
+	// The devcon spec leaves expectedUpdatedAt untyped, because it is a
+	// timestamp or null. A schema with no type and no structure is taken as a
+	// string; the engine sends the value "null" as JSON null.
+	if sc.Type == "" && sc.Properties == nil && sc.Items == nil && sc.OneOf == nil && sc.AnyOf == nil && sc.AllOf == nil {
+		return &schema{Type: tString, Description: sc.Description, Enum: sc.Enum}, nil
 	}
 
 	switch sc.Type {

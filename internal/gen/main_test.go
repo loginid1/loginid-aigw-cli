@@ -97,6 +97,47 @@ func TestGenerateChecksTheOverlay(t *testing.T) {
 	}
 }
 
+func TestGenerateSkipsAndUntypedFields(t *testing.T) {
+	t.Parallel()
+
+	flat := strings.Replace(fixtureSpec, "        child: {$ref: \"#/components/schemas/Thing\"}\n",
+		"        expectedUpdatedAt: {description: A timestamp or null.}\n", 1)
+	spec := write(t, "spec.yaml", flat)
+
+	// A skipped operation is left out, and still has to match one.
+	ov := write(t, "ov.yaml", "operations:\n  things#getPart: {skip: true}\n  things#create: {command: things create}\n")
+
+	src, err := generate(spec, ov, "test")
+	if err != nil {
+		t.Fatalf("skip and an untyped field: %v", err)
+	}
+
+	out := string(src)
+	if strings.Contains(out, "things#getPart") {
+		t.Errorf("skipped operation generated:\n%s", out)
+	}
+
+	if !strings.Contains(out, `Name: "expectedUpdatedAt", Flag: "expected-updated-at", In: "body", Type: "string"`) {
+		t.Errorf("untyped field is not a string flag:\n%s", out)
+	}
+
+	gone := write(t, "gone.yaml", "operations:\n  things#getPart: {command: things parts get}\n  things#create: {command: things create}\n  things#gone: {skip: true}\n")
+
+	_, err = generate(spec, gone, "test")
+	if err == nil || !strings.Contains(err.Error(), `"things#gone"`) {
+		t.Errorf("a skip entry with no operation: %v", err)
+	}
+
+	// No type because it is a composition: refused, not taken for a string.
+	composed := write(t, "composed.yaml", strings.Replace(flat, "{description: A timestamp or null.}",
+		"{oneOf: [{type: string}, {type: integer}]}", 1))
+
+	_, err = generate(composed, ov, "test")
+	if err == nil || !strings.Contains(err.Error(), "not supported") {
+		t.Errorf("a oneOf field: %v", err)
+	}
+}
+
 func TestGenerateRefusesRecursiveSchemas(t *testing.T) {
 	t.Parallel()
 
