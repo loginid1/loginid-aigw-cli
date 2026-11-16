@@ -81,6 +81,13 @@ change it.
   Prefer `update` where there is one: it changes only the fields you name. Before any
   `replace` or `set`, `get` or `list` the current state, tell the user what will change
   and what will be dropped, and wait for a clear yes.
+- **Changes made while you wait.** When you `get` before an `update`, `replace` or
+  `set`, pass the `updatedAt` it returned as `--expected-updated-at` (`null` if it had
+  none). `kya-issuers replace` takes one per entry the list held instead:
+  `-d "versions[0][id]=<issuerName>" -d "versions[0][expectedUpdatedAt]=<updatedAt>"`.
+  Then a change someone made while the user decided is refused with `HTTP 409:
+  conflict`, instead of being overwritten. On a 409, read it again and tell the user
+  what changed before you retry.
 - **Secrets.** `resources create` and `projects proxy-clients create` can return a
   `clientSecret` that the API never shows again. Always pass `--secret-file <path>` to
   them, so the secret goes to a new private file and never into this chat. Pick a path

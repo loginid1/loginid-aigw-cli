@@ -171,6 +171,17 @@ aigw projects kya-issuers replace --project-id <project-id> \
 
 `-d` refuses fields the API does not have. A flag and `-d` cannot set the same field.
 
+### Changes made by someone else
+
+The API refuses a write made from an out-of-date read, so one person's change does not
+silently undo another's. `aigw` reads the current version just before each `update`,
+`replace` and `set`, so you never have to pass it. To have a write refused if the object
+changed since *you* read it, pass the `updatedAt` from your `get` as
+`--expected-updated-at` (or `null` for one never saved); `kya-issuers replace` takes
+one per entry it held, as `-d "versions[0][id]=<issuerName>" -d
+"versions[0][expectedUpdatedAt]=<updatedAt>"`. A refused write fails with
+`HTTP 409: conflict`: read it again, then run the command again.
+
 ### Output
 
 Commands print the API's JSON response on stdout, ready for `jq`. Warnings and
