@@ -18,8 +18,10 @@ import (
 // loginid-aigw II-420). On this API the version is optional: a write that sends
 // none is not checked. One row's write (PUT, PATCH, DELETE) sends the updatedAt
 // it read in the X-Expected-Updated-At header; a list's write sends `seen`, one
-// {issuerName, updatedAt} per entry it held, in the body. A row never updated
-// has no updatedAt, so its write sends none, and a seen entry for it says "".
+// {issuerName, updatedAt} per entry it held, in the body. A row that exists and
+// was never updated sends the text null, which the API checks as "never updated"
+// and refuses if the row has changed since. A row that does not exist yet sends
+// none, and a seen entry for a row never updated says "".
 const (
 	// stampHeader is the header a row's write sends its version in.
 	stampHeader = "X-Expected-Updated-At"
@@ -29,8 +31,8 @@ const (
 	// and their ids are issuerNames; read it from the spec if another one comes.
 	seenIDField    = "issuerName"
 	seenStampField = "updatedAt"
-	// noVersion is how a caller says the row was never updated. A header cannot
-	// carry null, so it is sent as no header, which the API does not check.
+	// noVersion is how a caller says the row was never updated. The API reads the
+	// text null in the header as that, and checks it.
 	noVersion = "null"
 )
 
@@ -41,7 +43,8 @@ const unreadableNote = "note: this API key cannot read the object, so the write 
 // expectedFlagHelp replaces the spec's text, which is written for API callers.
 const expectedFlagHelp = "The updatedAt you read. Optional: the CLI reads the current one just before writing. " +
 	"Pass it to have the write refused (409 conflict) if the object changed since you read it. " +
-	"Pass null, or nothing, for an object that was never updated."
+	"Pass null for an object that was never updated, to have the write refused if it has been updated since. " +
+	"Pass nothing, and the CLI reads it."
 
 // isVersionInput reports whether p is the version a row's write sends, which
 // the CLI fills in itself and so never asks for.
@@ -95,8 +98,11 @@ func fillVersions(ctx context.Context, cmd *cobra.Command, op *Operation, c *cli
 	}
 
 	if one {
-		if s, ok := updatedAt(current).(string); ok {
+		switch s, ok := updatedAt(current).(string); {
+		case ok:
 			setStamp(req, s)
+		case current != nil:
+			setStamp(req, noVersion)
 		}
 	}
 
@@ -107,9 +113,10 @@ func fillVersions(ctx context.Context, cmd *cobra.Command, op *Operation, c *cli
 	return nil
 }
 
-// setStamp sends v as the write's version header. Empty, and "null", send none.
+// setStamp sends v as the write's version header. Empty sends none, so the write is not
+// checked.
 func setStamp(req *client.Request, v string) {
-	if v == "" || v == noVersion {
+	if v == "" {
 		return
 	}
 

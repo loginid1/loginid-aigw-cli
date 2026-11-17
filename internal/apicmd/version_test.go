@@ -119,7 +119,7 @@ func TestDeleteSendsTheVersionItRead(t *testing.T) {
 }
 
 // A version the caller passed is sent as given, with no read. "null" says the
-// row was never updated, which a header cannot carry, so none is sent.
+// row was never updated, and the API checks it as that.
 func TestAGivenVersionIsKept(t *testing.T) {
 	t.Parallel()
 
@@ -127,7 +127,7 @@ func TestAGivenVersionIsKept(t *testing.T) {
 		flag, want string
 	}{
 		{t0, t0},
-		{"null", ""},
+		{"null", "null"},
 	} {
 		srv, api := newFakeAPI(t, map[string]reply{
 			"PATCH " + projectPath: {http.StatusOK, `{}`},
@@ -148,19 +148,22 @@ func TestAGivenVersionIsKept(t *testing.T) {
 	}
 }
 
-// Never updated (404, or a row that reports no updatedAt): the write sends no
-// version, which this API does not check.
+// A row that does not exist yet (404) has no version to send: the write is not checked.
+// A row that exists with no updatedAt sends null, so it is refused if it changed since.
 func TestNoVersionToReadSendsNone(t *testing.T) {
 	t.Parallel()
 
 	issuer := projectPath + "/kya-issuer-policy/skyfire-kyapay"
 
-	for name, get := range map[string]reply{
-		"404":          {http.StatusNotFound, `{"msg":"Not found","msgCode":"not_found"}`},
-		"no updatedAt": {http.StatusOK, `{"issuerName":"skyfire-kyapay","minTrust":"KNOWN"}`},
+	for name, tc := range map[string]struct {
+		get  reply
+		want string
+	}{
+		"404":          {reply{http.StatusNotFound, `{"msg":"Not found","msgCode":"not_found"}`}, ""},
+		"no updatedAt": {reply{http.StatusOK, `{"issuerName":"skyfire-kyapay","minTrust":"KNOWN"}`}, "null"},
 	} {
 		srv, api := newFakeAPI(t, map[string]reply{
-			"GET " + issuer: get,
+			"GET " + issuer: tc.get,
 			"PUT " + issuer: {http.StatusOK, `{}`},
 		})
 
@@ -169,8 +172,8 @@ func TestNoVersionToReadSendsNone(t *testing.T) {
 			t.Fatalf("%s: %v", name, err)
 		}
 
-		if got := api.stamps[0]; got != "" {
-			t.Errorf("%s: sent version %q, want none", name, got)
+		if got := api.stamps[0]; got != tc.want {
+			t.Errorf("%s: sent version %q, want %q", name, got, tc.want)
 		}
 	}
 }
