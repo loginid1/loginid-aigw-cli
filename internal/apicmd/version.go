@@ -34,6 +34,10 @@ const (
 	noVersion = "null"
 )
 
+// unreadableNote is printed once when a write goes out without a version because the key
+// has no read scope.
+const unreadableNote = "note: this API key cannot read the object, so the write was not version-checked."
+
 // expectedFlagHelp replaces the spec's text, which is written for API callers.
 const expectedFlagHelp = "The updatedAt you read. Optional: the CLI reads the current one just before writing. " +
 	"Pass it to have the write refused (409 conflict) if the object changed since you read it. " +
@@ -78,6 +82,15 @@ func fillVersions(ctx context.Context, cmd *cobra.Command, op *Operation, c *cli
 
 	current, err := readCurrent(ctx, op, c, req)
 	if err != nil {
+		// A key that may write but not read cannot learn the version. It writes as it did
+		// before versions existed, and says so; any other failed read stops the write.
+		var apiErr *client.APIError
+		if errors.As(err, &apiErr) && apiErr.Status == http.StatusForbidden {
+			fmt.Fprintln(cmd.ErrOrStderr(), unreadableNote)
+
+			return nil
+		}
+
 		return fmt.Errorf("read the current version before writing (or pass it with --expected-updated-at): %w", ExitErrorFor(err))
 	}
 

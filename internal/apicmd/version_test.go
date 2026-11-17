@@ -231,14 +231,14 @@ func TestAFailedReadStopsTheWrite(t *testing.T) {
 	t.Parallel()
 
 	srv, api := newFakeAPI(t, map[string]reply{
-		"GET " + projectPath: {http.StatusForbidden, `{"msg":"api key is missing a required scope","msgCode":"forbidden"}`},
+		"GET " + projectPath: {http.StatusUnauthorized, `{"msg":"unauthorized","msgCode":"unauthorized"}`},
 	})
 
 	_, err := runAigw(t, srv.URL, projects, "update", "p1", "--name", "z", apiKey, "k")
 
 	var exitErr *apicmd.ExitError
-	if !errors.As(err, &exitErr) || exitErr.Code != apicmd.ExitMissingScope {
-		t.Errorf("err = %v, want exit %d", err, apicmd.ExitMissingScope)
+	if !errors.As(err, &exitErr) || exitErr.Code != apicmd.ExitNotAuthenticated {
+		t.Errorf("err = %v, want exit %d", err, apicmd.ExitNotAuthenticated)
 	}
 
 	if err == nil || !strings.Contains(err.Error(), "--expected-updated-at") {
@@ -247,6 +247,49 @@ func TestAFailedReadStopsTheWrite(t *testing.T) {
 
 	if len(api.writes) != 0 {
 		t.Errorf("wrote %v after a failed read", api.writes)
+	}
+}
+
+// A key that can write but not read gets a 403 on the read. The write goes out as it did
+// before versions, unchecked, with one note on stderr.
+func TestAWriteOnlyKeyWritesUnchecked(t *testing.T) {
+	t.Parallel()
+
+	const forbidden = `{"msg":"api key is missing a required scope","msgCode":"forbidden"}`
+
+	list := projectPath + "/kya-issuer-policy"
+
+	for name, tc := range map[string]struct {
+		replies map[string]reply
+		args    []string
+	}{
+		"one row": {
+			map[string]reply{"GET " + projectPath: {http.StatusForbidden, forbidden}, "PATCH " + projectPath: {http.StatusOK, `{}`}},
+			[]string{projects, "update", "p1", "--name", "z", apiKey, "k"},
+		},
+		"a list": {
+			map[string]reply{"GET " + list: {http.StatusForbidden, forbidden}, "PUT " + list: {http.StatusOK, `[]`}},
+			[]string{projects, "kya-issuers", "replace", "--project-id", "p1", "-d", "entries[0][issuerName]=c", apiKey, "k"},
+		},
+	} {
+		srv, api := newFakeAPI(t, tc.replies)
+
+		out, err := runAigw(t, srv.URL, tc.args...)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+
+		if len(api.writes) != 1 || api.stamps[0] != "" {
+			t.Errorf("%s: writes %v, version header %q, want one unchecked write", name, api.writes, api.stamps)
+		}
+
+		if _, sent := api.writes[0]["seen"]; sent {
+			t.Errorf("%s: sent a seen list it could not read", name)
+		}
+
+		if got := strings.Count(out, "was not version-checked"); got != 1 {
+			t.Errorf("%s: the note appeared %d times, want once:\n%s", name, got, out)
+		}
 	}
 }
 

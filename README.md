@@ -181,7 +181,7 @@ read it, pass the `updatedAt` from your `get` as `--expected-updated-at` (an obj
 updated has none: pass nothing, or `null`, and the write is not checked);
 `kya-issuers replace` takes one per entry it held, as `-d "seen[0][issuerName]=<issuerName>"
 -d "seen[0][updatedAt]=<updatedAt>"` (an entry never updated says an empty `updatedAt`). A
-refused write fails with `HTTP 409: conflict`: read it again, then run the command again.
+refused write fails with `HTTP 409: conflict`: read it again, then run the command again. A key with no read scope cannot read the version: its writes go out unchecked, as before, with a note on stderr.
 
 ### Output
 
