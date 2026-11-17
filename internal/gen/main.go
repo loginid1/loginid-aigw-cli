@@ -343,8 +343,17 @@ func buildOp(s *spec, path, method string, o *operation, command string) (outOp,
 			if err3 != nil {
 				return outOp{}, err3
 			}
-		case "header":
-			// The only header is Authorization, which the engine sets.
+		case inHeader:
+			// Authorization is set by the engine. The stamp header becomes an optional flag the
+			// engine fills from a read just before the write; any other header is not sent.
+			if p.Name != stampHeader {
+				continue
+			}
+
+			err4 := addFlag(outParam{Name: p.Name, Flag: kebab("expectedUpdatedAt"), In: inHeader, Type: tString, Required: false, Desc: p.Description})
+			if err4 != nil {
+				return outOp{}, err4
+			}
 		default:
 			return outOp{}, fmt.Errorf("parameter %s: location %q not supported", p.Name, p.In)
 		}

@@ -19,6 +19,9 @@ operations:
   projects#get:                        { command: projects get }
   projects#update:                     { command: projects update }
   projects#delete:                     { command: projects delete }
+  # Not in the CLI yet (II-445): a POST, so it would delete without the
+  # confirmation prompt every DELETE gets.
+  projects#bulkDelete:                 { skip: true }
 
   projects#listProxyClients:           { command: projects proxy-clients list }
   projects#generateProxyClient:        { command: projects proxy-clients create }
@@ -30,6 +33,11 @@ operations:
   resources#patch:                     { command: resources update }
   resources#update:                    { command: resources replace }
   resources#delete:                    { command: resources delete }
+  # Not in the CLI yet (II-445). bulk-delete is a POST, so it would delete
+  # without the confirmation prompt every DELETE gets; bulk-set-idps needs a
+  # version per resource. Each needs its own design.
+  resources#bulkDelete:                { skip: true }
+  resources#bulkSetIdps:               { skip: true }
 
   resources#getAuthenticationSettings: { command: resources auth-settings get }
   resources#setAuthenticationSettings: { command: resources auth-settings update }

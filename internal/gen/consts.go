@@ -8,6 +8,10 @@ const (
 	tArray  = "array"
 	tString = "string"
 
-	inPath  = "path"
-	inQuery = "query"
+	inPath   = "path"
+	inQuery  = "query"
+	inHeader = "header"
+
+	// stampHeader is the one header besides Authorization the CLI sets: the updatedAt a write read.
+	stampHeader = "X-Expected-Updated-At"
 )

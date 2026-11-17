@@ -217,3 +217,31 @@ func TestAPIBasePrefersTheOverlay(t *testing.T) {
 		}
 	}
 }
+
+// The updatedAt header a write reads becomes an optional --expected-updated-at flag. Any other
+// header is not sent.
+func TestGenerateTakesTheVersionHeaderAsAFlag(t *testing.T) {
+	t.Parallel()
+
+	withHeaders := strings.Replace(fixtureSpec,
+		"        - {name: partId, in: path, required: true, schema: {type: string}}\n",
+		"        - {name: partId, in: path, required: true, schema: {type: string}}\n"+
+			"        - {name: X-Expected-Updated-At, in: header, required: false, schema: {type: string}}\n"+
+			"        - {name: X-Other, in: header, required: false, schema: {type: string}}\n", 1)
+	spec := write(t, "spec.yaml", strings.Replace(withHeaders, "        child: {$ref: \"#/components/schemas/Thing\"}\n", "", 1))
+	ov := write(t, "ov.yaml", "operations:\n  things#getPart: {command: things parts get}\n  things#create: {command: things create}\n")
+
+	src, err := generate(spec, ov, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out := string(src)
+	if !strings.Contains(out, `Name: "X-Expected-Updated-At", Flag: "expected-updated-at", In: "header", Type: "string", Required: false`) {
+		t.Errorf("the version header is not an optional flag:\n%s", out)
+	}
+
+	if strings.Contains(out, "X-Other") {
+		t.Errorf("an unrelated header became a parameter:\n%s", out)
+	}
+}

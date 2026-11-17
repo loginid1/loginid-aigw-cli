@@ -65,6 +65,8 @@ const (
 	InPath  = "path"
 	InQuery = "query"
 	InBody  = "body"
+	// InHeader is the one request header a flag sets, the updatedAt a write read.
+	InHeader = "header"
 )
 
 // Scalar types. A list type is ListPrefix plus one of these.
