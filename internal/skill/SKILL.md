@@ -81,10 +81,10 @@ change it.
   Prefer `update` where there is one: it changes only the fields you name. Before any
   `replace` or `set`, `get` or `list` the current state, tell the user what will change
   and what will be dropped, and wait for a clear yes.
-- **Changes made while you wait.** When you `get` before an `update`, `replace` or
-  `set`, pass the `updatedAt` it returned as `--expected-updated-at` (`null` if it had
-  none). `kya-issuers replace` takes one per entry the list held instead:
-  `-d "versions[0][id]=<issuerName>" -d "versions[0][expectedUpdatedAt]=<updatedAt>"`.
+- **Changes made while you wait.** When you `get` before an `update`, `replace`, `set`,
+  `remove` or `clear`, pass the `updatedAt` it returned as `--expected-updated-at` (an object
+  that had none needs nothing). `kya-issuers replace` takes one per entry the list held instead:
+  `-d "seen[0][issuerName]=<issuerName>" -d "seen[0][updatedAt]=<updatedAt>"`.
   Then a change someone made while the user decided is refused with `HTTP 409:
   conflict`, instead of being overwritten. On a 409, read it again and tell the user
   what changed before you retry.

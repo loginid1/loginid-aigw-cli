@@ -25,6 +25,8 @@ type fakeAPI struct {
 	mu     sync.Mutex
 	calls  []string
 	writes []map[string]any
+	// stamps is the X-Expected-Updated-At header of each write, "" when none was sent.
+	stamps []string
 }
 
 func newFakeAPI(t *testing.T, replies map[string]reply) (*httptest.Server, *fakeAPI) {
@@ -41,11 +43,12 @@ func newFakeAPI(t *testing.T, replies map[string]reply) (*httptest.Server, *fake
 			raw, _ := io.ReadAll(r.Body)
 
 			var body map[string]any
-			if json.Unmarshal(raw, &body) != nil {
+			if len(raw) > 0 && json.Unmarshal(raw, &body) != nil {
 				t.Errorf("%s: body is not a JSON object: %s", key, raw)
 			}
 
 			api.writes = append(api.writes, body)
+			api.stamps = append(api.stamps, r.Header.Get("X-Expected-Updated-At"))
 		}
 		api.mu.Unlock()
 
@@ -84,22 +87,47 @@ func TestUpdateSendsTheVersionItRead(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := map[string]any{"name": "x-renamed", "expectedUpdatedAt": t1}
-	if len(api.writes) != 1 || !reflect.DeepEqual(api.writes[0], want) {
-		t.Errorf("write body = %v, want %v", api.writes, want)
+	if len(api.stamps) != 1 || api.stamps[0] != t1 {
+		t.Errorf("version header = %v, want %s", api.stamps, t1)
+	}
+
+	want := map[string]any{"name": "x-renamed"}
+	if !reflect.DeepEqual(api.writes[0], want) {
+		t.Errorf("write body = %v, want %v: the version is a header, not a body field", api.writes[0], want)
 	}
 }
 
-// A version the caller passed is sent as given, with no read; "null" is JSON null.
+// A delete sends the version it read too, in the same header.
+func TestDeleteSendsTheVersionItRead(t *testing.T) {
+	t.Parallel()
+
+	issuer := projectPath + "/kya-issuer-policy/skyfire-kyapay"
+
+	srv, api := newFakeAPI(t, map[string]reply{
+		"GET " + issuer:    {http.StatusOK, `{"issuerName":"skyfire-kyapay","updatedAt":"` + t1 + `"}`},
+		"DELETE " + issuer: {http.StatusNoContent, ``},
+	})
+
+	_, err := runAigw(t, srv.URL, projects, "kya-issuers", "remove", "skyfire-kyapay", "--project-id", "p1", "--confirm", apiKey, "k")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(api.stamps) != 1 || api.stamps[0] != t1 {
+		t.Errorf("version header = %v, want %s", api.stamps, t1)
+	}
+}
+
+// A version the caller passed is sent as given, with no read. "null" says the
+// row was never updated, which a header cannot carry, so none is sent.
 func TestAGivenVersionIsKept(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
-		flag string
-		want any
+		flag, want string
 	}{
 		{t0, t0},
-		{"null", nil},
+		{"null", ""},
 	} {
 		srv, api := newFakeAPI(t, map[string]reply{
 			"PATCH " + projectPath: {http.StatusOK, `{}`},
@@ -110,8 +138,8 @@ func TestAGivenVersionIsKept(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if got, ok := api.writes[0]["expectedUpdatedAt"]; !ok || got != tc.want {
-			t.Errorf("--expected-updated-at %s sent %v (present %v)", tc.flag, got, ok)
+		if got := api.stamps[0]; got != tc.want {
+			t.Errorf("--expected-updated-at %s sent %q, want %q", tc.flag, got, tc.want)
 		}
 
 		if len(api.calls) != 1 {
@@ -120,9 +148,9 @@ func TestAGivenVersionIsKept(t *testing.T) {
 	}
 }
 
-// Never saved (404), or a build that does not report updatedAt: the write says
-// null.
-func TestNoVersionToReadSendsNull(t *testing.T) {
+// Never updated (404, or a row that reports no updatedAt): the write sends no
+// version, which this API does not check.
+func TestNoVersionToReadSendsNone(t *testing.T) {
 	t.Parallel()
 
 	issuer := projectPath + "/kya-issuer-policy/skyfire-kyapay"
@@ -141,13 +169,13 @@ func TestNoVersionToReadSendsNull(t *testing.T) {
 			t.Fatalf("%s: %v", name, err)
 		}
 
-		if got, ok := api.writes[0]["expectedUpdatedAt"]; !ok || got != nil {
-			t.Errorf("%s: expectedUpdatedAt = %v (present %v), want null", name, got, ok)
+		if got := api.stamps[0]; got != "" {
+			t.Errorf("%s: sent version %q, want none", name, got)
 		}
 	}
 }
 
-func TestReplaceSendsAVersionPerHeldEntry(t *testing.T) {
+func TestReplaceSendsAnEntryPerHeldEntry(t *testing.T) {
 	t.Parallel()
 
 	list := projectPath + "/kya-issuer-policy"
@@ -164,11 +192,37 @@ func TestReplaceSendsAVersionPerHeldEntry(t *testing.T) {
 	}
 
 	want := []any{
-		map[string]any{"id": "a", "expectedUpdatedAt": t1},
-		map[string]any{"id": "b", "expectedUpdatedAt": nil},
+		map[string]any{"issuerName": "a", "updatedAt": t1},
+		map[string]any{"issuerName": "b", "updatedAt": ""},
 	}
-	if got := api.writes[0]["versions"]; !reflect.DeepEqual(got, want) {
-		t.Errorf("versions = %v, want %v", got, want)
+	if got := api.writes[0]["seen"]; !reflect.DeepEqual(got, want) {
+		t.Errorf("seen = %v, want %v", got, want)
+	}
+
+	if api.stamps[0] != "" {
+		t.Errorf("a list replace sends its versions in the body, got header %q", api.stamps[0])
+	}
+}
+
+// Entries the caller gave are kept, with no read.
+func TestAGivenSeenListIsKept(t *testing.T) {
+	t.Parallel()
+
+	list := projectPath + "/kya-issuer-policy"
+
+	srv, api := newFakeAPI(t, map[string]reply{
+		"PUT " + list: {http.StatusOK, `[]`},
+	})
+
+	_, err := runAigw(t, srv.URL, projects, "kya-issuers", "replace", "--project-id", "p1",
+		"-d", "entries[0][issuerName]=c", "-d", "seen[0][issuerName]=a", "-d", "seen[0][updatedAt]="+t0, apiKey, "k")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []any{map[string]any{"issuerName": "a", "updatedAt": t0}}
+	if got := api.writes[0]["seen"]; !reflect.DeepEqual(got, want) || len(api.calls) != 1 {
+		t.Errorf("seen = %v, calls = %v", got, api.calls)
 	}
 }
 
@@ -226,7 +280,7 @@ func TestHelpDoesNotRequireTheVersion(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		for _, bad := range []string{"<expected-updated-at>", "[versions]", "versions[0]"} {
+		for _, bad := range []string{"<expected-updated-at>", "[seen]", "seen[0]"} {
 			if strings.Contains(out, bad) {
 				t.Errorf("%v help mentions %q:\n%s", args, bad, out)
 			}

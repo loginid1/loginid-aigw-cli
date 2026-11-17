@@ -175,12 +175,13 @@ aigw projects kya-issuers replace --project-id <project-id> \
 
 The API refuses a write made from an out-of-date read, so one person's change does not
 silently undo another's. `aigw` reads the current version just before each `update`,
-`replace` and `set`, so you never have to pass it. To have a write refused if the object
-changed since *you* read it, pass the `updatedAt` from your `get` as
-`--expected-updated-at` (or `null` for one never saved); `kya-issuers replace` takes
-one per entry it held, as `-d "versions[0][id]=<issuerName>" -d
-"versions[0][expectedUpdatedAt]=<updatedAt>"`. A refused write fails with
-`HTTP 409: conflict`: read it again, then run the command again.
+`replace`, `set`, `remove` and `clear`, so you never have to pass it. It sends the version in
+the `X-Expected-Updated-At` header. To have a write refused if the object changed since *you*
+read it, pass the `updatedAt` from your `get` as `--expected-updated-at` (an object never
+updated has none: pass nothing, or `null`, and the write is not checked);
+`kya-issuers replace` takes one per entry it held, as `-d "seen[0][issuerName]=<issuerName>"
+-d "seen[0][updatedAt]=<updatedAt>"` (an entry never updated says an empty `updatedAt`). A
+refused write fails with `HTTP 409: conflict`: read it again, then run the command again.
 
 ### Output
 

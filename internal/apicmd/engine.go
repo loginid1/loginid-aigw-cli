@@ -236,18 +236,24 @@ func run(cmd *cobra.Command, op *Operation, base func() string, args []string) e
 
 	c := client.New(base(), apiKey.Value)
 
+	var reqBody map[string]any
+
 	if op.HasBody {
-		body, bodyErr := buildBody(cmd, op)
+		var bodyErr error
+
+		reqBody, bodyErr = buildBody(cmd, op)
 		if bodyErr != nil {
 			return bodyErr
 		}
+	}
 
-		err = fillVersions(cmd.Context(), op, c, req, body)
-		if err != nil {
-			return err
-		}
+	err = fillVersions(cmd.Context(), cmd, op, c, req, reqBody)
+	if err != nil {
+		return err
+	}
 
-		req.Body = body
+	if op.HasBody {
+		req.Body = reqBody
 	}
 
 	if op.Method == http.MethodDelete {
@@ -344,11 +350,9 @@ func doneBody(op *Operation, pathParams map[string]string) ([]byte, error) {
 // required only inside an optional object are not listed; the server reports
 // those.
 func requiredExample(op *Operation) string {
-	// The versions are required by the API but filled in by the CLI.
-	required := func(p Param) bool { return p.Required && !isVersionInput(&p) }
-	lists := slices.DeleteFunc(slices.Clone(op.RequiredLists), func(l string) bool { return l == versionsField })
+	required := func(p Param) bool { return p.Required }
 
-	if len(op.Args) == 0 && len(lists) == 0 && !slices.ContainsFunc(op.Params, required) {
+	if len(op.Args) == 0 && len(op.RequiredLists) == 0 && !slices.ContainsFunc(op.Params, required) {
 		return ""
 	}
 
@@ -377,7 +381,7 @@ func requiredExample(op *Operation) string {
 		}
 	}
 
-	for _, list := range lists {
+	for _, list := range op.RequiredLists {
 		if field := firstField(op, list+"[]."); field != "" {
 			b.WriteString(` -d "` + bracketKey(field) + "=" + exampleValue(op, field) + `"`)
 		}
