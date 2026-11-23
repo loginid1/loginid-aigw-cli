@@ -47,6 +47,10 @@ operations:
   resources#listSigningKeys:           { command: resources signing-keys list }
   resources#generateSigningKey:        { command: resources signing-keys create }
 
+  # Not in the CLI yet: public discovery documents, not console edits.
+  resources#getProtectedResourceDocument: { skip: true }
+  resources#getPoppyDocument:          { skip: true }
+
   # Agent domain rules: approve or reject agents by the domain they come from.
   # The project list also shows each resource's own rules.
   agentDomainRules#list:               { command: projects domain-rules list }

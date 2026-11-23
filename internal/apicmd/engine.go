@@ -440,14 +440,7 @@ func firstField(op *Operation, sub string) string {
 // bracketKey writes a Fields path the way -d takes it: "scopes[].value"
 // becomes "scopes[0][value]".
 func bracketKey(path string) string {
-	path = strings.ReplaceAll(path, "[]", "[0]")
-
-	parts := strings.Split(path, ".")
-	for i := 1; i < len(parts); i++ {
-		parts[i] = "[" + parts[i] + "]"
-	}
-
-	return strings.Join(parts, "")
+	return dotToBrackets(strings.ReplaceAll(path, "[]", "[0]"))
 }
 
 // buildBody assembles the request body from body flags first, then -d values,
