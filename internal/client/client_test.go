@@ -303,3 +303,30 @@ func TestPlainHTTPTriesEveryLoopbackAddress(t *testing.T) {
 		t.Fatalf("::1 first, server on 127.0.0.1: %v", err)
 	}
 }
+
+// Extra headers are sent, but never replace the client's own.
+func TestDoSendsExtraHeaders(t *testing.T) {
+	t.Parallel()
+
+	var gotStamp, gotAuth string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotStamp, gotAuth = r.Header.Get("X-Expected-Updated-At"), r.Header.Get("Authorization")
+
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	t.Cleanup(srv.Close)
+
+	_, err := client.New(srv.URL, "k-1").Do(t.Context(), &client.Request{
+		Method: http.MethodPatch,
+		Path:   "/projects/p1",
+		Header: map[string]string{"X-Expected-Updated-At": "2026-11-12T10:00:00.123456Z", "Authorization": "Bearer other"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if gotStamp != "2026-11-12T10:00:00.123456Z" || gotAuth != "Bearer k-1" {
+		t.Errorf("stamp %q, auth %q", gotStamp, gotAuth)
+	}
+}

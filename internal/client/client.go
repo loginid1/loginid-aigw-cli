@@ -142,6 +142,9 @@ type Request struct {
 	// PathParams fills the template. Values are escaped here.
 	PathParams map[string]string
 	Query      url.Values
+	// Header holds extra request headers, e.g. the updatedAt a write read. Authorization,
+	// Accept and Content-Type are always the client's own.
+	Header map[string]string
 	// Body is sent as JSON when non-nil.
 	Body any
 	// Scope is the scope the operation needs, named in a 403 error.
@@ -170,6 +173,10 @@ func (c *Client) Do(ctx context.Context, req *Request) ([]byte, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, req.Method, u, body)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
+	}
+
+	for k, v := range req.Header {
+		httpReq.Header.Set(k, v)
 	}
 
 	httpReq.Header.Set("Authorization", "Bearer "+c.APIKey)

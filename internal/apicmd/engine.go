@@ -140,7 +140,10 @@ func newOperationCommand(op *Operation, base func() string) *cobra.Command {
 			desc += " (one of: " + enumList(p.Enum) + ")"
 		}
 
-		if p.Required {
+		switch {
+		case isVersionInput(&p):
+			desc = expectedFlagHelp
+		case p.Required:
 			desc += " (required)"
 		}
 
@@ -231,14 +234,27 @@ func run(cmd *cobra.Command, op *Operation, base func() string, args []string) e
 		}
 	}
 
+	c := client.New(base(), apiKey.Value)
+
+	var reqBody map[string]any
+
 	if op.HasBody {
-		req.Body, err = buildBody(cmd, op)
-		if err != nil {
-			return err
+		var bodyErr error
+
+		reqBody, bodyErr = buildBody(cmd, op)
+		if bodyErr != nil {
+			return bodyErr
 		}
 	}
 
-	c := client.New(base(), apiKey.Value)
+	err = fillVersions(cmd.Context(), cmd, op, c, req, reqBody)
+	if err != nil {
+		return err
+	}
+
+	if op.HasBody {
+		req.Body = reqBody
+	}
 
 	if op.Method == http.MethodDelete {
 		err = confirmDelete(cmd, op, args, c, req)
@@ -334,7 +350,9 @@ func doneBody(op *Operation, pathParams map[string]string) ([]byte, error) {
 // required only inside an optional object are not listed; the server reports
 // those.
 func requiredExample(op *Operation) string {
-	if len(op.Args) == 0 && len(op.RequiredLists) == 0 && !slices.ContainsFunc(op.Params, func(p Param) bool { return p.Required }) {
+	required := func(p Param) bool { return p.Required }
+
+	if len(op.Args) == 0 && len(op.RequiredLists) == 0 && !slices.ContainsFunc(op.Params, required) {
 		return ""
 	}
 
@@ -348,7 +366,7 @@ func requiredExample(op *Operation) string {
 	}
 
 	for _, p := range op.Params {
-		if !p.Required {
+		if !required(p) {
 			continue
 		}
 
@@ -422,14 +440,7 @@ func firstField(op *Operation, sub string) string {
 // bracketKey writes a Fields path the way -d takes it: "scopes[].value"
 // becomes "scopes[0][value]".
 func bracketKey(path string) string {
-	path = strings.ReplaceAll(path, "[]", "[0]")
-
-	parts := strings.Split(path, ".")
-	for i := 1; i < len(parts); i++ {
-		parts[i] = "[" + parts[i] + "]"
-	}
-
-	return strings.Join(parts, "")
+	return dotToBrackets(strings.ReplaceAll(path, "[]", "[0]"))
 }
 
 // buildBody assembles the request body from body flags first, then -d values,
@@ -559,19 +570,7 @@ func DeletePrompt(ctx context.Context, op *Operation, target string, c *client.C
 // same path, and returns its name. Any failure returns "": the prompt is still
 // right without a name, and the delete reports its own errors.
 func lookupName(ctx context.Context, del *Operation, c *client.Client, req *client.Request) string {
-	i := slices.IndexFunc(Operations, func(op Operation) bool {
-		return op.Method == http.MethodGet && op.Path == del.Path
-	})
-	if i < 0 {
-		return ""
-	}
-
-	body, err := c.Do(ctx, &client.Request{
-		Method:     http.MethodGet,
-		Path:       Operations[i].Path,
-		PathParams: req.PathParams,
-		Scope:      Operations[i].Scope,
-	})
+	body, err := getSamePath(ctx, del, c, req)
 	if err != nil {
 		return ""
 	}

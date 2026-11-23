@@ -28,7 +28,7 @@ pkg_list := $(shell go list ./... | grep -v /test)
 # same checkout always generates the same code; bump it on purpose, run
 # `make generate`, and review the diff. Set AIGW_SPEC to a local file to skip
 # the fetch, e.g. AIGW_SPEC=../loginid-aigw/api/rest/devcon/openapi3.yaml.
-AIGW_SPEC_REF ?= fb6671b568204343b6451968f9003f535b37532d
+AIGW_SPEC_REF ?= 263915f46b10b937075a41a4bca0ec2bece11601
 AIGW_SPEC ?=
 spec_project := loginid%2Fsoftware%2Floginid-aigw
 # One path for both fetches, so moving the spec cannot break CI alone.
