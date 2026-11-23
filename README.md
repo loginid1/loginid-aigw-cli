@@ -180,7 +180,8 @@ the `X-Expected-Updated-At` header. To have a write refused if the object change
 read it, pass the `updatedAt` from your `get` as `--expected-updated-at` (an object never
 updated has none: pass `null`, and the write is refused if it has been updated since);
 `kya-issuers replace` takes one per entry it held, as `-d "seen[0][issuerName]=<issuerName>"
--d "seen[0][updatedAt]=<updatedAt>"` (an entry never updated says an empty `updatedAt`). A
+-d "seen[0][updatedAt]=<updatedAt>"` (an entry never updated says an empty `updatedAt`). An empty `seen` cannot be passed, so
+after an empty `list`, list again right before the `replace`. A
 refused write fails with `HTTP 409: conflict`: read it again, then run the command again. A key with no read scope cannot read the version: its writes go out unchecked, as before, with a note on stderr.
 
 ### Output

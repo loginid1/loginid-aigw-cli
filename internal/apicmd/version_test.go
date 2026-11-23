@@ -148,8 +148,25 @@ func TestAGivenVersionIsKept(t *testing.T) {
 	}
 }
 
-// A row that does not exist yet (404) has no version to send: the write is not checked.
-// A row that exists with no updatedAt sends null, so it is refused if it changed since.
+// An empty --expected-updated-at, such as an unset shell variable, is refused, not
+// taken as "no check".
+func TestAnEmptyGivenVersionIsRefused(t *testing.T) {
+	t.Parallel()
+
+	srv, api := newFakeAPI(t, map[string]reply{})
+
+	_, err := runAigw(t, srv.URL, projects, "update", "p1", "--name", "y", "--expected-updated-at", "", apiKey, "k")
+	if err == nil || !strings.Contains(err.Error(), "is empty") {
+		t.Errorf("empty --expected-updated-at: %v", err)
+	}
+
+	if len(api.calls) != 0 {
+		t.Errorf("empty --expected-updated-at: want no request, got %v", api.calls)
+	}
+}
+
+// A row that does not exist yet (404), or exists with no updatedAt, sends null, so the
+// write is refused if the row was created or changed since.
 func TestNoVersionToReadSendsNone(t *testing.T) {
 	t.Parallel()
 
@@ -159,7 +176,7 @@ func TestNoVersionToReadSendsNone(t *testing.T) {
 		get  reply
 		want string
 	}{
-		"404":          {reply{http.StatusNotFound, `{"msg":"Not found","msgCode":"not_found"}`}, ""},
+		"404":          {reply{http.StatusNotFound, `{"msg":"Not found","msgCode":"not_found"}`}, "null"},
 		"no updatedAt": {reply{http.StatusOK, `{"issuerName":"skyfire-kyapay","minTrust":"KNOWN"}`}, "null"},
 	} {
 		srv, api := newFakeAPI(t, map[string]reply{

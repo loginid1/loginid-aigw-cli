@@ -83,8 +83,10 @@ change it.
   and what will be dropped, and wait for a clear yes.
 - **Changes made while you wait.** When you `get` before an `update`, `replace`, `set`,
   `remove` or `clear`, pass the `updatedAt` it returned as `--expected-updated-at` (an object
-  that had none: pass `null`). `kya-issuers replace` takes one per entry the list held instead:
+  that had none, or that was not found: pass `null`). `kya-issuers replace` takes one per entry the list held instead:
   `-d "seen[0][issuerName]=<issuerName>" -d "seen[0][updatedAt]=<updatedAt>"`.
+  An empty list cannot be passed, so if the list was empty, `list` again right before the
+  `replace` and tell the user if it changed.
   Then a change someone made while the user decided is refused with `HTTP 409:
   conflict`, instead of being overwritten. On a 409, read it again and tell the user
   what changed before you retry.

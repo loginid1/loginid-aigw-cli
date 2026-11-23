@@ -588,7 +588,7 @@ func resolve(s *spec, sc *schema) (*schema, error) {
 
 	// The devcon spec leaves expectedUpdatedAt untyped, because it is a
 	// timestamp or null. A schema with no type and no structure is taken as a
-	// string; the engine sends the value "null" as JSON null.
+	// string, and sent as given.
 	if sc.Type == "" && sc.Properties == nil && sc.Items == nil && sc.OneOf == nil && sc.AnyOf == nil && sc.AllOf == nil {
 		return &schema{Type: tString, Description: sc.Description, Enum: sc.Enum}, nil
 	}

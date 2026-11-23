@@ -19,9 +19,9 @@ import (
 // none is not checked. One row's write (PUT, PATCH, DELETE) sends the updatedAt
 // it read in the X-Expected-Updated-At header; a list's write sends `seen`, one
 // {issuerName, updatedAt} per entry it held, in the body. A row that exists and
-// was never updated sends the text null, which the API checks as "never updated"
-// and refuses if the row has changed since. A row that does not exist yet sends
-// none, and a seen entry for a row never updated says "".
+// was never updated, or does not exist yet, sends the text null, which the API
+// checks as "never updated" and refuses if the row has changed or been created
+// since. A seen entry for a row never updated says "".
 const (
 	// stampHeader is the header a row's write sends its version in.
 	stampHeader = "X-Expected-Updated-At"
@@ -66,6 +66,10 @@ func fillVersions(ctx context.Context, cmd *cobra.Command, op *Operation, c *cli
 
 		if cmd.Flags().Changed(p.Flag) {
 			given, _ := cmd.Flags().GetString(p.Flag)
+			if given == "" {
+				return fmt.Errorf("--%s is empty: pass the updatedAt you read, or null for an object never updated", p.Flag)
+			}
+
 			setStamp(req, given)
 
 			one = false
@@ -127,14 +131,14 @@ func setStamp(req *client.Request, v string) {
 	req.Header[stampHeader] = v
 }
 
-// readCurrent is the GET on op's path, decoded. A 404 is nil: the object was
-// never saved, which a write states with no version.
+// readCurrent is the GET on op's path, decoded. A 404 is an object with no
+// updatedAt, so the write says null and a row created since is a 409.
 func readCurrent(ctx context.Context, op *Operation, c *client.Client, req *client.Request) (any, error) {
 	body, err := getSamePath(ctx, op, c, req)
 	if err != nil {
 		var apiErr *client.APIError
 		if errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound {
-			return nil, nil
+			return map[string]any{}, nil
 		}
 
 		return nil, err
